@@ -4,9 +4,9 @@ using NamedGraphs: add_edges!, forest_cover_edge_sequence, all_edges
 using SplitApplyCombine: group
 
 #TODO: Make this show() nicely.
-struct BoundaryMPSCache{V, N <: AbstractTensorNetwork{<:Any, V}, M <: Union{ITensor, Vector{<:ITensor}}} <: AbstractBeliefPropagationCache{M, V}
+struct BoundaryMPSCache{V, N <: AbstractTensorNetwork{<:Any, V}, M <: Union{ITensor, Vector{<:ITensor}}} <: AbstractBeliefPropagationCache{V}
     network::N
-    messages::Dictionary{NamedEdge, M}
+    messages::MessageCache{M, V}
     supergraph::PartitionedGraph
     sorted_edges::Dictionary{QuotientEdge, Vector{NamedEdge}}
     mps_bond_dimension::Integer
@@ -162,7 +162,7 @@ function BoundaryMPSCache(
     pes = all_quotientedges(supergraph)
     sorted_es = Dictionary{QuotientEdge, Vector{NamedEdge}}(pes, Vector{NamedEdge}[sorted_edges(supergraph, pe) for pe in pes])
 
-    messages = default_messages()
+    messages = default_messages(tn)
     bmps_cache = BoundaryMPSCache(tn, messages, supergraph, sorted_es, mps_bond_dimension, Dictionary{Pair, Vector}())
     @assert is_correct_format(bmps_cache)
     set_messages && set_interpartition_messages!(bmps_cache, pes)
