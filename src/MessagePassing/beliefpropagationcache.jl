@@ -4,13 +4,17 @@ using NamedGraphs: default_root_vertex, forest_cover, post_order_dfs_edges, fore
 using LinearAlgebra: normalize
 
 #TODO: Make this show() nicely.
-struct BeliefPropagationCache{V, N <: AbstractTensorNetwork{<:Any, V}, M <: Union{ITensor, Vector{ITensor}}} <:
+struct BeliefPropagationCache{V, N <: AbstractTensorNetwork{<:Any, V}, F, M <: Union{ITensor, Vector{ITensor}}} <:
     AbstractBeliefPropagationCache{V}
     network::N
+    factors::F
     messages::MessageCache{M, V}
     contraction_sequences::Dictionary{Pair, Vector}
     edge_sequence::Vector
 end
+
+factor_network(tn::TensorNetworkState) = NormFactors(tn)
+factor_network(tn) = tn
 
 function message_diff(message_a::ITensor, message_b::ITensor)
     n_a, n_b = norm(message_a), norm(message_b)
@@ -19,9 +23,15 @@ function message_diff(message_a::ITensor, message_b::ITensor)
 end
 
 messages(bp_cache::BeliefPropagationCache) = bp_cache.messages
+factors(bp_cache::BeliefPropagationCache) = bp_cache.factors
 network(bp_cache::BeliefPropagationCache) = bp_cache.network
 graph(bp_cache::BeliefPropagationCache) = graph(network(bp_cache))
 
+function BeliefPropagationCache(network, messages, contraction_sequences, edge_sequence)
+    return BeliefPropagationCache(
+        network, factor_network(network), messages, contraction_sequences, edge_sequence
+    )
+end
 function BeliefPropagationCache(network, messages, contraction_sequences)
     return BeliefPropagationCache(network, messages, contraction_sequences, forest_cover_edge_sequence(graph(network)))
 end
@@ -37,10 +47,6 @@ end
 default_bp_maxiter(g::AbstractGraph) = is_tree(g) ? 1 : _default_bp_update_maxiter
 
 edge_sequence(bp_cache::BeliefPropagationCache) = bp_cache.edge_sequence
-
-function edge_scalar(bp_cache::BeliefPropagationCache, edge::AbstractEdge)
-    return scalar(message(bp_cache, edge) * message(bp_cache, reverse(edge)))
-end
 
 #Algorithmic defaults
 default_update_alg(bp_cache::BeliefPropagationCache) = "bp"
@@ -141,20 +147,20 @@ function loop_correlation(bpc::BeliefPropagationCache, loop::Vector{<:NamedEdge}
     e_virtualinds = inds(message(bpc, target_e))
     e_virtualinds_sim = sim.(e_virtualinds)
 
+    fs = factors(bpc)
     local_tensors = ITensor[]
-    ts = bp_factors(bpc, src_vertex)
-
-    for t in ts
-        t_inds = filter(i -> i ∈ e_virtualinds, inds(t))
-        if !isempty(t_inds)
-            t_ind = only(t_inds)
+    for t in factor_tensors(fs[src_vertex])
+        for t_ind in filter(i -> i ∈ e_virtualinds, inds(t))
             t_ind_pos = findfirst(x -> x == t_ind, e_virtualinds)
             t = replaceinds(t, t_ind => e_virtualinds_sim[t_ind_pos])
         end
         push!(local_tensors, t)
     end
 
-    tensors = ITensor[local_tensors; reduce(vcat, [bp_factors(bpc, v) for v in setdiff(vs, [src_vertex])]); incoming_messages]
+    tensors = ITensor[
+        local_tensors; factor_tensors([fs[v] for v in setdiff(vs, [src_vertex])]);
+        incoming_messages
+    ]
     seq = contraction_sequence(tensors; alg = "omeinsum", optimizer = GreedyMethod())
     t = contract_network(tensors; sequence = seq)
 

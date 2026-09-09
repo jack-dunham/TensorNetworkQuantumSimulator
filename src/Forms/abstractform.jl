@@ -38,12 +38,3 @@ function default_message(form::AbstractForm, edge::AbstractEdge)
     return one(similar(ket(form)[src(edge)], cod, dom), cod, dom)
 end
 
-function bp_factors(form::AbstractForm, verts::Vector)
-    factors = ITensor[]
-    for v in verts
-        append!(factors, ITensor[ket(form)[v], operator(form)[v], bra_tensor(form, v)])
-    end
-    return factors
-end
-
-bp_factors(form::AbstractForm, v) = bp_factors(form, [v])

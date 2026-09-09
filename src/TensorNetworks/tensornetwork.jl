@@ -16,14 +16,6 @@ function default_message(tn::TensorNetwork, edge::NamedEdge)
     return adapt_like(tn, delta(virtualinds(tn, edge)))
 end
 
-function bp_factors(tn::TensorNetwork, vertex)
-    return ITensor[tn[vertex]]
-end
-
-function bp_factors(tn::TensorNetwork, vertices::Vector)
-    return ITensor[tn[v] for v in vertices]
-end
-
 function random_tensornetwork(eltype, g::AbstractGraph; bond_dimension::Integer = 1)
     l = Dict(e => Index(bond_dimension) for e in edges(g))
     l = merge(l, Dict(reverse(e) => l[e] for e in edges(g)))

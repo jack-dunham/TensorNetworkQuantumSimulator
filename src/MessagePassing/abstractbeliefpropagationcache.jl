@@ -6,6 +6,7 @@ abstract type AbstractBeliefPropagationCache{V} <: AbstractNamedGraph{V} end
 
 #Interface
 messages(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
+factors(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 contraction_sequences(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 function default_messages(tn)
     return MessageCache{Union{ITensor, Vector{ITensor}}, vertextype(tn)}(
@@ -24,18 +25,26 @@ function rescale_vertices!(
     return not_implemented()
 end
 
-function vertex_scalar(bp_cache::AbstractBeliefPropagationCache, vertex)
-    incoming_ms = incoming_messages(bp_cache, vertex)
-    state = bp_factors(bp_cache, vertex)
-    contract_list = [state; incoming_ms]
+function vertex_scalar(factors, messages, vertex; graph = factors)
+    incoming_ms = incoming_messages(factors, messages, vertex; graph)
+    contract_list = ITensor[factor_tensors(factors[vertex]); incoming_ms]
     sequence = contraction_sequence(contract_list; alg = "optimal")
     return scalar(contract_network(contract_list; sequence))
+end
+
+function vertex_scalar(bp_cache::AbstractBeliefPropagationCache, vertex)
+    return vertex_scalar(factors(bp_cache), messages(bp_cache), vertex; graph = bp_cache)
+end
+
+function edge_scalar(factors, messages, edge::AbstractEdge; kwargs...)
+    m, mr = message(factors, messages, edge), message(factors, messages, reverse(edge))
+    return scalar(m * mr)
 end
 
 function edge_scalar(
         bp_cache::AbstractBeliefPropagationCache, edge::AbstractEdge; kwargs...
     )
-    return not_implemented()
+    return edge_scalar(factors(bp_cache), messages(bp_cache), edge; kwargs...)
 end
 
 network(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
@@ -43,7 +52,6 @@ graph(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 
 #Forward onto the network
 for f in [
-        :(bp_factors),
         :(default_bp_maxiter),
         :(virtualinds),
         :(datatype),
@@ -95,15 +103,19 @@ function setmessage!(bp_cache::AbstractBeliefPropagationCache, e::AbstractEdge, 
     return bp_cache
 end
 
+function message(factors, messages, edge::AbstractEdge; kwargs...)
+    return get(() -> default_message(factors, edge; kwargs...), messages, edge)
+end
+
 function message(bp_cache::AbstractBeliefPropagationCache, edge::AbstractEdge; kwargs...)
     return get(() -> default_message(bp_cache, edge; kwargs...), messages(bp_cache), edge)
 end
 
-function messages(bp_cache::AbstractBeliefPropagationCache, edges::Vector{<:AbstractEdge})
+function message_list(factors, messages, edges::Vector{<:AbstractEdge})
     isempty(edges) && return ITensor[]
     ms = ITensor[]
     for e in edges
-        m = message(bp_cache, e)
+        m = message(factors, messages, e)
         if m isa ITensor
             push!(ms, m)
         else
@@ -111,6 +123,10 @@ function messages(bp_cache::AbstractBeliefPropagationCache, edges::Vector{<:Abst
         end
     end
     return ms
+end
+
+function messages(bp_cache::AbstractBeliefPropagationCache, edges::Vector{<:AbstractEdge})
+    return message_list(factors(bp_cache), messages(bp_cache), edges)
 end
 
 function setmessages!(bp_cache::AbstractBeliefPropagationCache, edges, messages)
@@ -141,6 +157,14 @@ function edge_scalars(
     return map(e -> edge_scalar(bp_cache, e; kwargs...), edges)
 end
 
+function vertex_scalars(factors, messages, vertices = collect(Graphs.vertices(factors)))
+    return map(v -> vertex_scalar(factors, messages, v), vertices)
+end
+
+function edge_scalars(factors, messages, edges = Graphs.edges(factors))
+    return map(e -> edge_scalar(factors, messages, e), edges)
+end
+
 function scalar_factors_quotient(bp_cache::AbstractBeliefPropagationCache)
     return vertex_scalars(bp_cache), edge_scalars(bp_cache)
 end
@@ -153,21 +177,31 @@ function incoming_messages(
     return messages(bp_cache, b_edges)
 end
 
+function incoming_messages(
+        factors, messages, vertices::Vector{<:Any}; ignore_edges = [], graph = factors
+    )
+    b_edges = NamedGraphs.boundary_edges(graph, vertices; dir = :in)
+    b_edges = !isempty(ignore_edges) ? setdiff(b_edges, ignore_edges) : b_edges
+    return message_list(factors, messages, b_edges)
+end
+
+function incoming_messages(factors, messages, vertex; kwargs...)
+    return incoming_messages(factors, messages, [vertex]; kwargs...)
+end
+
 function incoming_messages(bp_cache::AbstractBeliefPropagationCache, vertex; kwargs...)
     return incoming_messages(bp_cache, [vertex]; kwargs...)
 end
 
 function updated_message(
-        alg::Algorithm"contract", bp_cache::AbstractBeliefPropagationCache, edge::NamedEdge
+        alg::Algorithm"contract", factors, messages, edge::NamedEdge, seq_cache; graph = factors
     )
     vertex = src(edge)
     incoming_ms = incoming_messages(
-        bp_cache, vertex; ignore_edges = (reverse(edge),)
+        factors, messages, vertex; ignore_edges = (reverse(edge),), graph
     )
-    state = bp_factors(bp_cache, vertex)
-    contract_list = ITensor[incoming_ms; state]
+    contract_list = ITensor[incoming_ms; factor_tensors(factors[vertex])]
     cache_key = vertex => edge
-    seq_cache = contraction_sequences(bp_cache)
     seq_changed = false
     if haskey(seq_cache, cache_key)
         sequence = seq_cache[cache_key]
@@ -192,6 +226,15 @@ function updated_message(
     end
 
     return updated_message, (cache_key, sequence, seq_changed)
+end
+
+function updated_message(
+        alg::Algorithm"contract", bp_cache::AbstractBeliefPropagationCache, edge::NamedEdge
+    )
+    return updated_message(
+        alg, factors(bp_cache), messages(bp_cache), edge, contraction_sequences(bp_cache);
+        graph = bp_cache
+    )
 end
 
 function updated_message(
