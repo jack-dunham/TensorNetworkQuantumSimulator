@@ -8,10 +8,20 @@ abstract type AbstractBeliefPropagationCache{V} <: AbstractNamedGraph{V} end
 messages(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 factors(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 contraction_sequences(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
-function default_messages(tn)
+function empty_messages(tn)
     return MessageCache{Union{ITensor, Vector{ITensor}}, vertextype(tn)}(
         undef, collect(vertices(tn))
     )
+end
+
+# `ITensorNetworksNext.SimpleMessageUpdate` reads its environment from the message cache's
+# own graph, which holds only the edges carrying a message, so they are seeded up front.
+function default_messages(tn, g = graph(tn))
+    ms = empty_messages(tn)
+    for e in all_edges(g)
+        set!(ms, e, default_message(tn, e))
+    end
+    return ms
 end
 
 function rescale_messages!(
@@ -65,12 +75,6 @@ for f in [
             return $f(network(bp_cache), args...; kwargs...)
         end
     end
-end
-
-function invalidate_contraction_sequences!(bp_cache::AbstractBeliefPropagationCache)
-    seq_cache = contraction_sequences(bp_cache)
-    !isnothing(seq_cache) && empty!(seq_cache)
-    return bp_cache
 end
 
 #Forward onto the graph
@@ -246,60 +250,53 @@ function updated_message(
     return updated_message(set_default_kwargs(Algorithm(alg; kwargs...)), bp_cache, edge)
 end
 
-"""
-Do a sequential update of the message tensors on `edges`
-"""
-function update_iteration!(
-        alg::Algorithm"bp",
-        bpc::AbstractBeliefPropagationCache,
-        edges::Vector;
-        (update_diff!) = nothing,
-    )
-    for e in edges
-        prev_message = !isnothing(update_diff!) ? message(bpc, e) : nothing
-        update_message!(alg.kwargs.message_update_alg, bpc, e)
-        if !isnothing(update_diff!)
-            update_diff![] += message_diff(message(bpc, e), prev_message)
-        end
-    end
-    return bpc
+# The strategy `beliefpropagation` calls per edge. `alg` is TNQS's message update
+# (`"contract"` here, the boundary-MPS ones in `boundarympscache.jl`), `sequences` its
+# contraction-sequence memo and `graph` the topology the environment is read from.
+struct MessageUpdate{A, S, G} <: MessageUpdateAlgorithm
+    alg::A
+    sequences::S
+    graph::G
 end
 
-"""
-More generic interface for update, with default params
-"""
+set_default_kwargs(alg::MessageUpdateAlgorithm, ::AbstractBeliefPropagationCache) = alg
+
+message_update_algorithm(alg::MessageUpdateAlgorithm, bpc, sequences) = alg
+message_update_algorithm(alg::Algorithm, bpc, sequences) = MessageUpdate(alg, sequences, bpc)
+
+function ITensorNetworksNext.message_update!(u::MessageUpdate, cache, factors, edge)
+    m, (cache_key, sequence, seq_changed) = updated_message(
+        u.alg, factors, cache, edge, u.sequences; graph = u.graph
+    )
+    seq_changed && set!(u.sequences, cache_key, sequence)
+    set!(cache, edge, m)
+    return cache
+end
+
+# `ITensorNetworksNext.beliefpropagation` is not used: it rebuilds the message cache from
+# the messages it is given, and a rebuilt cache carries only the vertices its assigned edges
+# touch, so a partition whose messages `delete_partition_messages!` removed is gone from the
+# graph and the next `setmessage!` on it throws `IndexError`.
 function update(alg::Algorithm"bp", bpc::AbstractBeliefPropagationCache)
-    compute_error = !isnothing(alg.kwargs.tolerance)
-    if isnothing(alg.kwargs.maxiter)
-        error("You need to specify a number of iterations for BP!")
-    end
-    bpc = copy(bpc)
-    invalidate_contraction_sequences!(bpc)
-    converged = false
-    avg_diff = nothing
-    niter = alg.kwargs.maxiter
-    for i in 1:alg.kwargs.maxiter
-        diff = compute_error ? Ref(0.0) : nothing
-        update_iteration!(alg, bpc, alg.kwargs.edge_sequence; (update_diff!) = diff)
-        if compute_error
-            avg_diff = diff.x / length(alg.kwargs.edge_sequence)
-            if avg_diff <= alg.kwargs.tolerance
-                converged = true
-                niter = i
-                break
-            end
-        end
-    end
-    if compute_error
-        if converged
-            alg.kwargs.verbose && println("BP converged to desired precision after $niter iterations.")
-        else
-            msg = "BP did not converge to tolerance $(alg.kwargs.tolerance) after $niter iterations (final average message change: $avg_diff)."
-            alg.kwargs.verbose ? println(msg) : @warn(msg)
-        end
-    end
-    invalidate_contraction_sequences!(bpc)
-    return bpc
+    isnothing(alg.kwargs.maxiter) && error("You need to specify a number of iterations for BP!")
+    edges = alg.kwargs.edge_sequence
+    tolerance = alg.kwargs.tolerance
+    subalgorithm = BeliefPropagationSweepAlgorithm(;
+        message_update_algorithm = message_update_algorithm(
+            alg.kwargs.message_update_alg, bpc, Dictionary{Pair, Vector}()
+        ),
+        stopping_criterion = AI.StopAfterIteration(length(edges)),
+    )
+    algorithm = BeliefPropagationAlgorithm(;
+        edges, subalgorithm,
+        stopping_criterion = select_beliefpropagation_stopping_criterion(
+            isnothing(tolerance) ? (; alg.kwargs.maxiter) : (; alg.kwargs.maxiter, tol = tolerance)
+        ),
+    )
+    ms = AI.solve(
+        BeliefPropagationProblem(factors(bpc)), algorithm; iterate = copy(messages(bpc))
+    )
+    return set_messages(bpc, ms)
 end
 
 function update(bpc::AbstractBeliefPropagationCache; alg = default_update_alg(bpc), kwargs...)

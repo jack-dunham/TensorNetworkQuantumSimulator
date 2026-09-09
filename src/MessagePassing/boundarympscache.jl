@@ -78,6 +78,21 @@ end
 
 network(bmps_cache::BoundaryMPSCache) = bmps_cache.network
 messages(bmps_cache::BoundaryMPSCache) = bmps_cache.messages
+function set_messages(bmps_cache::BoundaryMPSCache, ms, seqs = contraction_sequences(bmps_cache))
+    return BoundaryMPSCache(
+        network(bmps_cache), ms, supergraph(bmps_cache), sorted_edges(bmps_cache),
+        mps_bond_dimension(bmps_cache), seqs
+    )
+end
+
+# A partition sweep needs the cache, not just the messages, so it is rewrapped around the
+# ones the driver iterates and mutates them in place.
+function ITensorNetworksNext.message_update!(
+        u::MessageUpdate{<:Union{Algorithm"fitting", Algorithm"zipup"}}, cache, factors, pe
+    )
+    update_message!(u.alg, set_messages(u.graph, cache, u.sequences), pe)
+    return cache
+end
 factors(bmps_cache::BoundaryMPSCache) = factor_network(network(bmps_cache))
 supergraph(bmps_cache::BoundaryMPSCache) = bmps_cache.supergraph
 graph(bmps_cache::BoundaryMPSCache) = unpartitioned_graph(supergraph(bmps_cache))
@@ -163,7 +178,7 @@ function BoundaryMPSCache(
     pes = all_quotientedges(supergraph)
     sorted_es = Dictionary{QuotientEdge, Vector{NamedEdge}}(pes, Vector{NamedEdge}[sorted_edges(supergraph, pe) for pe in pes])
 
-    messages = default_messages(tn)
+    messages = empty_messages(tn)
     bmps_cache = BoundaryMPSCache(tn, messages, supergraph, sorted_es, mps_bond_dimension, Dictionary{Pair, Vector}())
     @assert is_correct_format(bmps_cache)
     set_messages && set_interpartition_messages!(bmps_cache, pes)

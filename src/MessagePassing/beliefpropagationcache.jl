@@ -16,13 +16,12 @@ end
 factor_network(tn::TensorNetworkState) = NormFactors(tn)
 factor_network(tn) = tn
 
-function message_diff(message_a::ITensor, message_b::ITensor)
-    n_a, n_b = norm(message_a), norm(message_b)
-    f = abs2(dot(message_a, message_b) / (n_a * n_b))
-    return 1 - f
-end
-
 messages(bp_cache::BeliefPropagationCache) = bp_cache.messages
+function set_messages(bp_cache::BeliefPropagationCache, ms, seqs = contraction_sequences(bp_cache))
+    return BeliefPropagationCache(
+        network(bp_cache), factors(bp_cache), ms, seqs, edge_sequence(bp_cache)
+    )
+end
 factors(bp_cache::BeliefPropagationCache) = bp_cache.factors
 network(bp_cache::BeliefPropagationCache) = bp_cache.network
 graph(bp_cache::BeliefPropagationCache) = graph(network(bp_cache))
@@ -58,17 +57,15 @@ function set_default_kwargs(alg::Algorithm"contract", bp_cache::AbstractBeliefPr
     sequence_alg = get(alg.kwargs, :sequence_alg, default_sequence_alg(alg))
     return Algorithm("contract"; normalize, sequence_alg)
 end
-default_verbose(::Algorithm"bp") = false
 default_tolerance(::Algorithm"bp") = nothing
 function set_default_kwargs(alg::Algorithm"bp", bp_cache::BeliefPropagationCache)
-    verbose = get(alg.kwargs, :verbose, default_verbose(alg))
     maxiter = get(alg.kwargs, :maxiter, default_bp_maxiter(bp_cache))
     _edge_sequence = get(alg.kwargs, :edge_sequence, edge_sequence(bp_cache))
     tolerance = get(alg.kwargs, :tolerance, default_tolerance(alg))
     message_update_alg = set_default_kwargs(
         get(alg.kwargs, :message_update_alg, Algorithm(default_message_update_alg(bp_cache))), bp_cache
     )
-    return Algorithm("bp"; verbose, maxiter, edge_sequence = _edge_sequence, tolerance, message_update_alg)
+    return Algorithm("bp"; maxiter, edge_sequence = _edge_sequence, tolerance, message_update_alg)
 end
 
 function update_message!(
@@ -108,12 +105,8 @@ function default_tolerance(type)
 end
 
 function default_bp_update_kwargs(tn::AbstractTensorNetwork)
-    if is_tree(tn)
-        maxiter, tolerance, verbose = 1, nothing, false
-    else
-        maxiter, tolerance, verbose = _default_bp_update_maxiter, default_tolerance(scalartype(tn)), false
-    end
-    return (; maxiter, tolerance, verbose)
+    is_tree(tn) && return (; maxiter = 1, tolerance = nothing)
+    return (; maxiter = _default_bp_update_maxiter, tolerance = default_tolerance(scalartype(tn)))
 end
 
 default_bp_update_kwargs(bp_cache::BeliefPropagationCache) = default_bp_update_kwargs(network(bp_cache))

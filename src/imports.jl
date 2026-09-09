@@ -54,8 +54,11 @@ using TensorAlgebra.MatrixAlgebra: sqrth_invsqrth_safe, sqrth_safe
 using MatrixAlgebraKit: project_hermitian
 
 using DataGraphs: DataGraphs, map_vertex_data, underlying_graph_type
-using ITensorNetworksNext: ITensorNetworksNext, AbstractITensorNetwork, ITensorNetwork,
-    MessageCache, linkinds
+using AlgorithmsInterface: AlgorithmsInterface as AI
+using ITensorNetworksNext: ITensorNetworksNext, AbstractITensorNetwork,
+    BeliefPropagationAlgorithm, BeliefPropagationProblem, BeliefPropagationSweepAlgorithm,
+    ITensorNetwork, MessageCache, MessageUpdateAlgorithm, linkinds,
+    select_beliefpropagation_stopping_criterion
 
 using Adapt: adapt
 
