@@ -80,7 +80,8 @@ function norm_factors(tns::TensorNetworkState, verts::Vector; op_strings::Functi
 end
 
 norm_factors(tns::TensorNetworkState, v; kwargs...) = norm_factors(tns, [v]; kwargs...)
-bp_factors(tns::TensorNetworkState, v) = norm_factors(tns, v)
+
+ITensorNetworksNext.factor_tensors(tns::TensorNetworkState, v) = norm_factors(tns, v)
 
 # The flat starting message is the identity between the ket links and their bra
 # copies, built as an identity operator so it follows the links' backend (graded

@@ -2,30 +2,26 @@ using Graphs: Graphs
 using NamedGraphs: all_edges
 using Adapt
 
-abstract type AbstractBeliefPropagationCache{M, V} <: AbstractEdgeDataGraph{M, V} end
+abstract type AbstractBeliefPropagationCache{V} <: AbstractNamedGraph{V} end
 
 #Interface
 messages(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
+factors(bp_cache::AbstractBeliefPropagationCache) = network(bp_cache)
 contraction_sequences(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
-default_messages() = Dictionary{NamedEdge, Union{ITensor, Vector{ITensor}}}()
-
-Graphs.is_directed(::Type{<:AbstractBeliefPropagationCache}) = true
-Graphs.is_directed(::AbstractBeliefPropagationCache) = true
-Graphs.edges(bp_cache::AbstractBeliefPropagationCache) = collect(all_edges(graph(bp_cache)))
-
-DataGraphs.underlying_graph(bp_cache::AbstractBeliefPropagationCache) = graph(bp_cache)
-DataGraphs.edge_data(bp_cache::AbstractBeliefPropagationCache) = messages(bp_cache)
-DataGraphs.get_edge_data(bp_cache::AbstractBeliefPropagationCache, e) = messages(bp_cache)[e]
-function DataGraphs.is_edge_assigned(bp_cache::AbstractBeliefPropagationCache, e)
-    return isassigned(messages(bp_cache), e)
+function empty_messages(tn)
+    return MessageCache{Union{ITensor, Vector{ITensor}}, vertextype(tn)}(
+        undef, collect(vertices(tn))
+    )
 end
-function DataGraphs.set_edge_data!(bp_cache::AbstractBeliefPropagationCache, m, e)
-    set!(messages(bp_cache), e, m)
-    return bp_cache
-end
-function Graphs.rem_edge!(bp_cache::AbstractBeliefPropagationCache, e)
-    delete!(messages(bp_cache), e)
-    return bp_cache
+
+# `ITensorNetworksNext.SimpleMessageUpdate` reads its environment from the message cache's
+# own graph, which holds only the edges carrying a message, so they are seeded up front.
+function default_messages(tn, g = graph(tn))
+    ms = empty_messages(tn)
+    for e in all_edges(g)
+        set!(ms, e, default_message(tn, e))
+    end
+    return ms
 end
 
 function rescale_messages!(
@@ -39,18 +35,26 @@ function rescale_vertices!(
     return not_implemented()
 end
 
-function vertex_scalar(bp_cache::AbstractBeliefPropagationCache, vertex)
-    incoming_ms = incoming_messages(bp_cache, vertex)
-    state = bp_factors(bp_cache, vertex)
-    contract_list = [state; incoming_ms]
+function vertex_scalar(factors, messages, vertex; graph = factors)
+    incoming_ms = incoming_messages(factors, messages, vertex; graph)
+    contract_list = ITensor[factor_tensors(factors, vertex); incoming_ms]
     sequence = contraction_sequence(contract_list; alg = "optimal")
     return scalar(contract_network(contract_list; sequence))
+end
+
+function vertex_scalar(bp_cache::AbstractBeliefPropagationCache, vertex)
+    return vertex_scalar(factors(bp_cache), messages(bp_cache), vertex; graph = bp_cache)
+end
+
+function edge_scalar(factors, messages, edge::AbstractEdge; kwargs...)
+    m, mr = message(factors, messages, edge), message(factors, messages, reverse(edge))
+    return scalar(m * mr)
 end
 
 function edge_scalar(
         bp_cache::AbstractBeliefPropagationCache, edge::AbstractEdge; kwargs...
     )
-    return not_implemented()
+    return edge_scalar(factors(bp_cache), messages(bp_cache), edge; kwargs...)
 end
 
 network(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
@@ -58,7 +62,6 @@ graph(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 
 #Forward onto the network
 for f in [
-        :(bp_factors),
         :(default_bp_maxiter),
         :(virtualinds),
         :(datatype),
@@ -72,12 +75,6 @@ for f in [
             return $f(network(bp_cache), args...; kwargs...)
         end
     end
-end
-
-function invalidate_contraction_sequences!(bp_cache::AbstractBeliefPropagationCache)
-    seq_cache = contraction_sequences(bp_cache)
-    !isnothing(seq_cache) && empty!(seq_cache)
-    return bp_cache
 end
 
 #Forward onto the graph
@@ -101,24 +98,28 @@ NamedGraphs.encoded_graph(bp_cache::AbstractBeliefPropagationCache) = NamedGraph
 
 #Functions derived from the interface
 function deletemessage!(bp_cache::AbstractBeliefPropagationCache, e::AbstractEdge)
-    delete!(bp_cache, e)
+    delete!(messages(bp_cache), e)
     return bp_cache
 end
 
 function setmessage!(bp_cache::AbstractBeliefPropagationCache, e::AbstractEdge, message::Union{ITensor, Vector{<:ITensor}})
-    set!(bp_cache, e, message)
+    set!(messages(bp_cache), e, message)
     return bp_cache
 end
 
-function message(bp_cache::AbstractBeliefPropagationCache, edge::AbstractEdge; kwargs...)
-    return get(() -> default_message(bp_cache, edge; kwargs...), bp_cache, edge)
+function message(factors, messages, edge::AbstractEdge; kwargs...)
+    return get(() -> default_message(factors, edge; kwargs...), messages, edge)
 end
 
-function messages(bp_cache::AbstractBeliefPropagationCache, edges::Vector{<:AbstractEdge})
+function message(bp_cache::AbstractBeliefPropagationCache, edge::AbstractEdge; kwargs...)
+    return get(() -> default_message(bp_cache, edge; kwargs...), messages(bp_cache), edge)
+end
+
+function message_list(factors, messages, edges::Vector{<:AbstractEdge})
     isempty(edges) && return ITensor[]
     ms = ITensor[]
     for e in edges
-        m = message(bp_cache, e)
+        m = message(factors, messages, e)
         if m isa ITensor
             push!(ms, m)
         else
@@ -126,6 +127,10 @@ function messages(bp_cache::AbstractBeliefPropagationCache, edges::Vector{<:Abst
         end
     end
     return ms
+end
+
+function messages(bp_cache::AbstractBeliefPropagationCache, edges::Vector{<:AbstractEdge})
+    return message_list(factors(bp_cache), messages(bp_cache), edges)
 end
 
 function setmessages!(bp_cache::AbstractBeliefPropagationCache, edges, messages)
@@ -151,9 +156,17 @@ function vertex_scalars(
 end
 
 function edge_scalars(
-        bp_cache::AbstractBeliefPropagationCache, edges = Graphs.edges(graph(bp_cache)); kwargs...
+        bp_cache::AbstractBeliefPropagationCache, edges = Graphs.edges(bp_cache); kwargs...
     )
     return map(e -> edge_scalar(bp_cache, e; kwargs...), edges)
+end
+
+function vertex_scalars(factors, messages, vertices = collect(Graphs.vertices(factors)))
+    return map(v -> vertex_scalar(factors, messages, v), vertices)
+end
+
+function edge_scalars(factors, messages, edges = Graphs.edges(factors))
+    return map(e -> edge_scalar(factors, messages, e), edges)
 end
 
 function scalar_factors_quotient(bp_cache::AbstractBeliefPropagationCache)
@@ -168,21 +181,31 @@ function incoming_messages(
     return messages(bp_cache, b_edges)
 end
 
+function incoming_messages(
+        factors, messages, vertices::Vector{<:Any}; ignore_edges = [], graph = factors
+    )
+    b_edges = NamedGraphs.boundary_edges(graph, vertices; dir = :in)
+    b_edges = !isempty(ignore_edges) ? setdiff(b_edges, ignore_edges) : b_edges
+    return message_list(factors, messages, b_edges)
+end
+
+function incoming_messages(factors, messages, vertex; kwargs...)
+    return incoming_messages(factors, messages, [vertex]; kwargs...)
+end
+
 function incoming_messages(bp_cache::AbstractBeliefPropagationCache, vertex; kwargs...)
     return incoming_messages(bp_cache, [vertex]; kwargs...)
 end
 
 function updated_message(
-        alg::Algorithm"contract", bp_cache::AbstractBeliefPropagationCache, edge::NamedEdge
+        alg::Algorithm"contract", factors, messages, edge::NamedEdge, seq_cache; graph = factors
     )
     vertex = src(edge)
     incoming_ms = incoming_messages(
-        bp_cache, vertex; ignore_edges = (reverse(edge),)
+        factors, messages, vertex; ignore_edges = (reverse(edge),), graph
     )
-    state = bp_factors(bp_cache, vertex)
-    contract_list = ITensor[incoming_ms; state]
+    contract_list = ITensor[incoming_ms; factor_tensors(factors, vertex)]
     cache_key = vertex => edge
-    seq_cache = contraction_sequences(bp_cache)
     seq_changed = false
     if haskey(seq_cache, cache_key)
         sequence = seq_cache[cache_key]
@@ -210,6 +233,15 @@ function updated_message(
 end
 
 function updated_message(
+        alg::Algorithm"contract", bp_cache::AbstractBeliefPropagationCache, edge::NamedEdge
+    )
+    return updated_message(
+        alg, factors(bp_cache), messages(bp_cache), edge, contraction_sequences(bp_cache);
+        graph = bp_cache
+    )
+end
+
+function updated_message(
         bp_cache::AbstractBeliefPropagationCache,
         edge::NamedEdge;
         alg = default_message_update_alg(bp_cache),
@@ -218,60 +250,53 @@ function updated_message(
     return updated_message(set_default_kwargs(Algorithm(alg; kwargs...)), bp_cache, edge)
 end
 
-"""
-Do a sequential update of the message tensors on `edges`
-"""
-function update_iteration!(
-        alg::Algorithm"bp",
-        bpc::AbstractBeliefPropagationCache,
-        edges::Vector;
-        (update_diff!) = nothing,
-    )
-    for e in edges
-        prev_message = !isnothing(update_diff!) ? message(bpc, e) : nothing
-        update_message!(alg.kwargs.message_update_alg, bpc, e)
-        if !isnothing(update_diff!)
-            update_diff![] += message_diff(message(bpc, e), prev_message)
-        end
-    end
-    return bpc
+# The strategy `beliefpropagation` calls per edge. `alg` is TNQS's message update
+# (`"contract"` here, the boundary-MPS ones in `boundarympscache.jl`), `sequences` its
+# contraction-sequence memo and `graph` the topology the environment is read from.
+struct MessageUpdate{A, S, G} <: MessageUpdateAlgorithm
+    alg::A
+    sequences::S
+    graph::G
 end
 
-"""
-More generic interface for update, with default params
-"""
+set_default_kwargs(alg::MessageUpdateAlgorithm, ::AbstractBeliefPropagationCache) = alg
+
+message_update_algorithm(alg::MessageUpdateAlgorithm, bpc, sequences) = alg
+message_update_algorithm(alg::Algorithm, bpc, sequences) = MessageUpdate(alg, sequences, bpc)
+
+function ITensorNetworksNext.message_update!(u::MessageUpdate, cache, factors, edge)
+    m, (cache_key, sequence, seq_changed) = updated_message(
+        u.alg, factors, cache, edge, u.sequences; graph = u.graph
+    )
+    seq_changed && set!(u.sequences, cache_key, sequence)
+    set!(cache, edge, m)
+    return cache
+end
+
+# `ITensorNetworksNext.beliefpropagation` is not used: it rebuilds the message cache from
+# the messages it is given, and a rebuilt cache carries only the vertices its assigned edges
+# touch, so a partition whose messages `delete_partition_messages!` removed is gone from the
+# graph and the next `setmessage!` on it throws `IndexError`.
 function update(alg::Algorithm"bp", bpc::AbstractBeliefPropagationCache)
-    compute_error = !isnothing(alg.kwargs.tolerance)
-    if isnothing(alg.kwargs.maxiter)
-        error("You need to specify a number of iterations for BP!")
-    end
-    bpc = copy(bpc)
-    invalidate_contraction_sequences!(bpc)
-    converged = false
-    avg_diff = nothing
-    niter = alg.kwargs.maxiter
-    for i in 1:alg.kwargs.maxiter
-        diff = compute_error ? Ref(0.0) : nothing
-        update_iteration!(alg, bpc, alg.kwargs.edge_sequence; (update_diff!) = diff)
-        if compute_error
-            avg_diff = diff.x / length(alg.kwargs.edge_sequence)
-            if avg_diff <= alg.kwargs.tolerance
-                converged = true
-                niter = i
-                break
-            end
-        end
-    end
-    if compute_error
-        if converged
-            alg.kwargs.verbose && println("BP converged to desired precision after $niter iterations.")
-        else
-            msg = "BP did not converge to tolerance $(alg.kwargs.tolerance) after $niter iterations (final average message change: $avg_diff)."
-            alg.kwargs.verbose ? println(msg) : @warn(msg)
-        end
-    end
-    invalidate_contraction_sequences!(bpc)
-    return bpc
+    isnothing(alg.kwargs.maxiter) && error("You need to specify a number of iterations for BP!")
+    edges = alg.kwargs.edge_sequence
+    tolerance = alg.kwargs.tolerance
+    subalgorithm = BeliefPropagationSweepAlgorithm(;
+        message_update_algorithm = message_update_algorithm(
+            alg.kwargs.message_update_alg, bpc, Dictionary{Pair, Vector}()
+        ),
+        stopping_criterion = AI.StopAfterIteration(length(edges)),
+    )
+    algorithm = BeliefPropagationAlgorithm(;
+        edges, subalgorithm,
+        stopping_criterion = select_beliefpropagation_stopping_criterion(
+            isnothing(tolerance) ? (; alg.kwargs.maxiter) : (; alg.kwargs.maxiter, tol = tolerance)
+        ),
+    )
+    ms = AI.solve(
+        BeliefPropagationProblem(factors(bpc)), algorithm; iterate = copy(messages(bpc))
+    )
+    return set_messages(bpc, ms)
 end
 
 function update(bpc::AbstractBeliefPropagationCache; alg = default_update_alg(bpc), kwargs...)

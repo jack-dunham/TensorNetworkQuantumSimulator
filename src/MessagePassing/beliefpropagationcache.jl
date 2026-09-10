@@ -5,20 +5,17 @@ using LinearAlgebra: normalize
 
 #TODO: Make this show() nicely.
 struct BeliefPropagationCache{V, N <: AbstractTensorNetwork{<:Any, V}, M <: Union{ITensor, Vector{ITensor}}} <:
-    AbstractBeliefPropagationCache{M, V}
+    AbstractBeliefPropagationCache{V}
     network::N
-    messages::Dictionary{NamedEdge, M}
+    messages::MessageCache{M, V}
     contraction_sequences::Dictionary{Pair, Vector}
     edge_sequence::Vector
 end
 
-function message_diff(message_a::ITensor, message_b::ITensor)
-    n_a, n_b = norm(message_a), norm(message_b)
-    f = abs2(dot(message_a, message_b) / (n_a * n_b))
-    return 1 - f
-end
-
 messages(bp_cache::BeliefPropagationCache) = bp_cache.messages
+function set_messages(bp_cache::BeliefPropagationCache, ms, seqs = contraction_sequences(bp_cache))
+    return BeliefPropagationCache(network(bp_cache), ms, seqs, edge_sequence(bp_cache))
+end
 network(bp_cache::BeliefPropagationCache) = bp_cache.network
 graph(bp_cache::BeliefPropagationCache) = graph(network(bp_cache))
 
@@ -26,7 +23,7 @@ function BeliefPropagationCache(network, messages, contraction_sequences)
     return BeliefPropagationCache(network, messages, contraction_sequences, forest_cover_edge_sequence(graph(network)))
 end
 BeliefPropagationCache(network, messages) = BeliefPropagationCache(network, messages, Dictionary{Pair, Vector}())
-BeliefPropagationCache(network) = BeliefPropagationCache(network, default_messages())
+BeliefPropagationCache(network) = BeliefPropagationCache(network, default_messages(network))
 
 contraction_sequences(bp_cache::BeliefPropagationCache) = bp_cache.contraction_sequences
 
@@ -38,10 +35,6 @@ default_bp_maxiter(g::AbstractGraph) = is_tree(g) ? 1 : _default_bp_update_maxit
 
 edge_sequence(bp_cache::BeliefPropagationCache) = bp_cache.edge_sequence
 
-function edge_scalar(bp_cache::BeliefPropagationCache, edge::AbstractEdge)
-    return scalar(message(bp_cache, edge) * message(bp_cache, reverse(edge)))
-end
-
 #Algorithmic defaults
 default_update_alg(bp_cache::BeliefPropagationCache) = "bp"
 default_message_update_alg(bp_cache::BeliefPropagationCache) = "contract"
@@ -52,17 +45,15 @@ function set_default_kwargs(alg::Algorithm"contract", bp_cache::AbstractBeliefPr
     sequence_alg = get(alg.kwargs, :sequence_alg, default_sequence_alg(alg))
     return Algorithm("contract"; normalize, sequence_alg)
 end
-default_verbose(::Algorithm"bp") = false
 default_tolerance(::Algorithm"bp") = nothing
 function set_default_kwargs(alg::Algorithm"bp", bp_cache::BeliefPropagationCache)
-    verbose = get(alg.kwargs, :verbose, default_verbose(alg))
     maxiter = get(alg.kwargs, :maxiter, default_bp_maxiter(bp_cache))
     _edge_sequence = get(alg.kwargs, :edge_sequence, edge_sequence(bp_cache))
     tolerance = get(alg.kwargs, :tolerance, default_tolerance(alg))
     message_update_alg = set_default_kwargs(
         get(alg.kwargs, :message_update_alg, Algorithm(default_message_update_alg(bp_cache))), bp_cache
     )
-    return Algorithm("bp"; verbose, maxiter, edge_sequence = _edge_sequence, tolerance, message_update_alg)
+    return Algorithm("bp"; maxiter, edge_sequence = _edge_sequence, tolerance, message_update_alg)
 end
 
 function update_message!(
@@ -102,12 +93,8 @@ function default_tolerance(type)
 end
 
 function default_bp_update_kwargs(tn::AbstractTensorNetwork)
-    if is_tree(tn)
-        maxiter, tolerance, verbose = 1, nothing, false
-    else
-        maxiter, tolerance, verbose = _default_bp_update_maxiter, default_tolerance(scalartype(tn)), false
-    end
-    return (; maxiter, tolerance, verbose)
+    is_tree(tn) && return (; maxiter = 1, tolerance = nothing)
+    return (; maxiter = _default_bp_update_maxiter, tolerance = default_tolerance(scalartype(tn)))
 end
 
 default_bp_update_kwargs(bp_cache::BeliefPropagationCache) = default_bp_update_kwargs(network(bp_cache))
@@ -141,20 +128,20 @@ function loop_correlation(bpc::BeliefPropagationCache, loop::Vector{<:NamedEdge}
     e_virtualinds = inds(message(bpc, target_e))
     e_virtualinds_sim = sim.(e_virtualinds)
 
+    fs = factors(bpc)
     local_tensors = ITensor[]
-    ts = bp_factors(bpc, src_vertex)
-
-    for t in ts
-        t_inds = filter(i -> i ∈ e_virtualinds, inds(t))
-        if !isempty(t_inds)
-            t_ind = only(t_inds)
+    for t in factor_tensors(fs, src_vertex)
+        for t_ind in filter(i -> i ∈ e_virtualinds, inds(t))
             t_ind_pos = findfirst(x -> x == t_ind, e_virtualinds)
             t = replaceinds(t, t_ind => e_virtualinds_sim[t_ind_pos])
         end
         push!(local_tensors, t)
     end
 
-    tensors = ITensor[local_tensors; reduce(vcat, [bp_factors(bpc, v) for v in setdiff(vs, [src_vertex])]); incoming_messages]
+    tensors = ITensor[
+        local_tensors; mapreduce(v -> factor_tensors(fs, v), vcat, setdiff(vs, [src_vertex]));
+        incoming_messages
+    ]
     seq = contraction_sequence(tensors; alg = "omeinsum", optimizer = GreedyMethod())
     t = contract_network(tensors; sequence = seq)
 

@@ -18,12 +18,11 @@ const TNQS = TensorNetworkQuantumSimulator
         @test network(ψ_BPC) isa TensorNetwork
         @test ψ_BPC isa BeliefPropagationCache
         @test graph(ψ_BPC) == g
-        @test isempty(messages(ψ_BPC))
+        @test length(keys(messages(ψ_BPC))) == 2 * length(edges(g))
         @test datatype(ψ_BPC) == datatype(ψ)
         @test scalartype(ψ_BPC) == scalartype(ψ)
 
         ψ_BPC = update(ψ_BPC)
-        @test !isempty(messages(ψ_BPC))
         @test length(keys(messages(ψ_BPC))) == 2 * length(edges(g))
         z_bp = partitionfunction(ψ_BPC)
         @test z_bp ≈ contract_network(ψ; alg = "exact")
@@ -38,12 +37,11 @@ const TNQS = TensorNetworkQuantumSimulator
         @test ψ_BPC isa BeliefPropagationCache
         @test network(ψ_BPC) isa TensorNetworkState
         @test graph(ψ_BPC) == g
-        @test isempty(messages(ψ_BPC))
+        @test length(keys(messages(ψ_BPC))) == 2 * length(edges(g))
         @test datatype(ψ_BPC) == datatype(ψ)
         @test scalartype(ψ_BPC) == scalartype(ψ)
 
         ψ_BPC = update(ψ_BPC)
-        @test !isempty(messages(ψ_BPC))
         @test length(keys(messages(ψ_BPC))) == 2 * length(edges(g))
         z_bp = partitionfunction(ψ_BPC)
         @test z_bp ≈ norm_sqr(ψ; alg = "exact")
@@ -68,6 +66,15 @@ end
     # Test that sequences are cleared after update returns (only live during update)
     bpc = update(bpc)
     @test isempty(TNQS.contraction_sequences(bpc))
+end
+
+@testset "Test ITensorNetworksNext message update" begin
+    using ITensorNetworksNext: SimpleMessageUpdate
+    g = named_comb_tree((3, 3))
+    tn = random_tensornetwork(Float64, g; bond_dimension = 2)
+    bpc = update(BeliefPropagationCache(tn))
+    bpc_itnn = update(BeliefPropagationCache(tn); message_update_alg = SimpleMessageUpdate())
+    @test partitionfunction(bpc_itnn) ≈ partitionfunction(bpc)
 end
 
 @testset "Test setting multiple messages" begin

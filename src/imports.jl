@@ -53,8 +53,13 @@ import Base: truncate
 using TensorAlgebra.MatrixAlgebra: sqrth_invsqrth_safe, sqrth_safe
 using MatrixAlgebraKit: project_hermitian
 
-using DataGraphs: DataGraphs, AbstractEdgeDataGraph, map_vertex_data, underlying_graph_type
-using ITensorNetworksNext: ITensorNetworksNext, AbstractITensorNetwork, ITensorNetwork, linkinds
+using DataGraphs: DataGraphs, map_vertex_data, underlying_graph_type
+using AlgorithmsInterface: AlgorithmsInterface as AI
+using ITensorNetworksNext: ITensorNetworksNext, AbstractITensorNetwork,
+    BeliefPropagationAlgorithm, BeliefPropagationProblem, BeliefPropagationSweepAlgorithm,
+    factor_tensors,
+    ITensorNetwork, MessageCache, MessageUpdateAlgorithm, linkinds,
+    select_beliefpropagation_stopping_criterion
 
 using Adapt: adapt
 
