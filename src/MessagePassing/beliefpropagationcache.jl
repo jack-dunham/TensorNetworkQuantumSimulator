@@ -4,33 +4,21 @@ using NamedGraphs: default_root_vertex, forest_cover, post_order_dfs_edges, fore
 using LinearAlgebra: normalize
 
 #TODO: Make this show() nicely.
-struct BeliefPropagationCache{V, N <: AbstractTensorNetwork{<:Any, V}, F, M <: Union{ITensor, Vector{ITensor}}} <:
+struct BeliefPropagationCache{V, N <: AbstractTensorNetwork{<:Any, V}, M <: Union{ITensor, Vector{ITensor}}} <:
     AbstractBeliefPropagationCache{V}
     network::N
-    factors::F
     messages::MessageCache{M, V}
     contraction_sequences::Dictionary{Pair, Vector}
     edge_sequence::Vector
 end
 
-factor_network(tn::TensorNetworkState) = NormFactors(tn)
-factor_network(tn) = tn
-
 messages(bp_cache::BeliefPropagationCache) = bp_cache.messages
 function set_messages(bp_cache::BeliefPropagationCache, ms, seqs = contraction_sequences(bp_cache))
-    return BeliefPropagationCache(
-        network(bp_cache), factors(bp_cache), ms, seqs, edge_sequence(bp_cache)
-    )
+    return BeliefPropagationCache(network(bp_cache), ms, seqs, edge_sequence(bp_cache))
 end
-factors(bp_cache::BeliefPropagationCache) = bp_cache.factors
 network(bp_cache::BeliefPropagationCache) = bp_cache.network
 graph(bp_cache::BeliefPropagationCache) = graph(network(bp_cache))
 
-function BeliefPropagationCache(network, messages, contraction_sequences, edge_sequence)
-    return BeliefPropagationCache(
-        network, factor_network(network), messages, contraction_sequences, edge_sequence
-    )
-end
 function BeliefPropagationCache(network, messages, contraction_sequences)
     return BeliefPropagationCache(network, messages, contraction_sequences, forest_cover_edge_sequence(graph(network)))
 end

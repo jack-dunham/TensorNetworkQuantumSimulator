@@ -81,27 +81,7 @@ end
 
 norm_factors(tns::TensorNetworkState, v; kwargs...) = norm_factors(tns, [v]; kwargs...)
 
-# The factor graph of a state: `[v]` is its ket and bra at `v` as one lazy product. Built
-# from `norm_factors`, so a vertex whose ket no longer carries a declared site index (a
-# projector was applied to it) contributes the same factor it did before the projection.
-struct NormFactors{T, V, I} <: AbstractTensorNetwork{T, V}
-    state::TensorNetworkState{T, V, I}
-end
-
-graph(nf::NormFactors) = graph(nf.state)
-DataGraphs.underlying_graph(nf::NormFactors) = graph(nf.state)
-function DataGraphs.underlying_graph_type(type::Type{<:NormFactors})
-    return underlying_graph_type(fieldtype(type, :state))
-end
-DataGraphs.get_vertex_data(nf::NormFactors, v) = reduce(*, lazy.(norm_factors(nf.state, v)))
-ITensorNetworksNext.factor_tensors(nf::NormFactors, v) = norm_factors(nf.state, v)
-DataGraphs.is_vertex_assigned(nf::NormFactors, v) = has_vertex(graph(nf.state), v)
-DataGraphs.is_edge_assigned(::NormFactors, _edge) = false
-Base.eltype(::Type{<:NormFactors}) = LazyNamedTensor{dimnametype(ITensor), ITensor}
-Dictionaries.issettable(::NormFactors) = false
-Dictionaries.isinsertable(::NormFactors) = false
-
-default_message(nf::NormFactors, edge::AbstractEdge) = default_message(nf.state, edge)
+ITensorNetworksNext.factor_tensors(tns::TensorNetworkState, v) = norm_factors(tns, v)
 
 # The flat starting message is the identity between the ket links and their bra
 # copies, built as an identity operator so it follows the links' backend (graded

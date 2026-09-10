@@ -93,7 +93,7 @@ function ITensorNetworksNext.message_update!(
     update_message!(u.alg, set_messages(u.graph, cache, u.sequences), pe)
     return cache
 end
-factors(bmps_cache::BoundaryMPSCache) = factor_network(network(bmps_cache))
+
 supergraph(bmps_cache::BoundaryMPSCache) = bmps_cache.supergraph
 graph(bmps_cache::BoundaryMPSCache) = unpartitioned_graph(supergraph(bmps_cache))
 mps_bond_dimension(bmps_cache::BoundaryMPSCache) = bmps_cache.mps_bond_dimension

@@ -6,7 +6,7 @@ abstract type AbstractBeliefPropagationCache{V} <: AbstractNamedGraph{V} end
 
 #Interface
 messages(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
-factors(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
+factors(bp_cache::AbstractBeliefPropagationCache) = network(bp_cache)
 contraction_sequences(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 function empty_messages(tn)
     return MessageCache{Union{ITensor, Vector{ITensor}}, vertextype(tn)}(
