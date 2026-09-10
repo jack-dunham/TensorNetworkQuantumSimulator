@@ -57,6 +57,7 @@ using DataGraphs: DataGraphs, map_vertex_data, underlying_graph_type
 using AlgorithmsInterface: AlgorithmsInterface as AI
 using ITensorNetworksNext: ITensorNetworksNext, AbstractITensorNetwork,
     BeliefPropagationAlgorithm, BeliefPropagationProblem, BeliefPropagationSweepAlgorithm,
+    factor_tensors,
     ITensorNetwork, MessageCache, MessageUpdateAlgorithm, linkinds,
     select_beliefpropagation_stopping_criterion
 

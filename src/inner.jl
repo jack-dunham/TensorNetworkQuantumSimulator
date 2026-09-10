@@ -50,7 +50,7 @@ function inner(
         alg::Algorithm"exact", blf::BilinearForm;
         contraction_sequence_kwargs = (; alg = "omeinsum", optimizer = GreedyMethod())
     )
-    blf_tensors = factor_tensors([blf[v] for v in vertices(ket(blf))])
+    blf_tensors = mapreduce(v -> factor_tensors(blf, v), vcat, vertices(ket(blf)))
     seq = contraction_sequence(blf_tensors; contraction_sequence_kwargs...)
     return scalar(contract_network(blf_tensors; sequence = seq))
 end

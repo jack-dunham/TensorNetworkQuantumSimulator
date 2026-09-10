@@ -1,5 +1,5 @@
 function contract_network(alg::Algorithm"exact", tn::AbstractTensorNetwork; contraction_sequence_kwargs = (; alg = "omeinsum", optimizer = GreedyMethod()))
-    tn_tensors = factor_tensors([tn[v] for v in vertices(tn)])
+    tn_tensors = mapreduce(v -> factor_tensors(tn, v), vcat, vertices(tn))
     seq = contraction_sequence(tn_tensors; contraction_sequence_kwargs...)
     return scalar(contract_network(tn_tensors; sequence = seq))
 end

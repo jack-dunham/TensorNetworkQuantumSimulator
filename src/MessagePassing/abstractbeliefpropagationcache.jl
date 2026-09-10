@@ -37,7 +37,7 @@ end
 
 function vertex_scalar(factors, messages, vertex; graph = factors)
     incoming_ms = incoming_messages(factors, messages, vertex; graph)
-    contract_list = ITensor[factor_tensors(factors[vertex]); incoming_ms]
+    contract_list = ITensor[factor_tensors(factors, vertex); incoming_ms]
     sequence = contraction_sequence(contract_list; alg = "optimal")
     return scalar(contract_network(contract_list; sequence))
 end
@@ -204,7 +204,7 @@ function updated_message(
     incoming_ms = incoming_messages(
         factors, messages, vertex; ignore_edges = (reverse(edge),), graph
     )
-    contract_list = ITensor[incoming_ms; factor_tensors(factors[vertex])]
+    contract_list = ITensor[incoming_ms; factor_tensors(factors, vertex)]
     cache_key = vertex => edge
     seq_changed = false
     if haskey(seq_cache, cache_key)

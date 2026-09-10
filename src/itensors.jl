@@ -38,21 +38,6 @@ function onehot(eltype::Type, (i, p)::Pair{<:Index})
 end
 onehot(p::Pair{<:Index}) = onehot(Float64, p)
 
-# A lazy factor evaluates its product tree in one step, which hides the tensors it is built
-# from from the contraction sequence optimizer; unfold it into them instead.
-factor_tensors(t) = ITensor[t]
-function factor_tensors(t::ITensorBase.LazyNamedTensor)
-    ITensorBase.iscall(t) || return ITensor[ITensorBase.unwrap(t)]
-    return factor_tensors(ITensorBase.arguments(t))
-end
-function factor_tensors(tensors::AbstractVector)
-    ts = ITensor[]
-    for t in tensors
-        append!(ts, factor_tensors(t))
-    end
-    return ts
-end
-
 function contract_network end
 function contract_network(tensors::AbstractVector; sequence = nothing)
     return isnothing(sequence) ? reduce(*, tensors) : _contract_sequence(tensors, sequence)

@@ -97,11 +97,11 @@ function weight(bpc::BeliefPropagationCache, eg)
     bpc, antiprojectors, aux = sim_edgeinduced_subgraph(bpc, eg)
     incoming_ms = ITensor[message(bpc, e) for e in bes]
     local_tensors = if isnothing(aux)
-        AbstractNamedTensor[factors(bpc)[v] for v in vs]
+        mapreduce(v -> factor_tensors(factors(bpc), v), vcat, vs)
     else
         collect(Iterators.flatten(norm_factors(network(bpc), [v]; auxinds_f = u -> aux[u]) for v in vs))
     end
-    ts = ITensor[incoming_ms; factor_tensors(local_tensors); antiprojectors]
+    ts = ITensor[incoming_ms; local_tensors; antiprojectors]
     seq = contraction_sequence(ts; alg = "omeinsum", optimizer = GreedyMethod())
     return scalar(contract_network(ts; sequence = seq))
 end

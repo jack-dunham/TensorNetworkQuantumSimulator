@@ -142,7 +142,7 @@ function loop_correlation(bpc::BeliefPropagationCache, loop::Vector{<:NamedEdge}
 
     fs = factors(bpc)
     local_tensors = ITensor[]
-    for t in factor_tensors(fs[src_vertex])
+    for t in factor_tensors(fs, src_vertex)
         for t_ind in filter(i -> i ∈ e_virtualinds, inds(t))
             t_ind_pos = findfirst(x -> x == t_ind, e_virtualinds)
             t = replaceinds(t, t_ind => e_virtualinds_sim[t_ind_pos])
@@ -151,7 +151,7 @@ function loop_correlation(bpc::BeliefPropagationCache, loop::Vector{<:NamedEdge}
     end
 
     tensors = ITensor[
-        local_tensors; factor_tensors([fs[v] for v in setdiff(vs, [src_vertex])]);
+        local_tensors; mapreduce(v -> factor_tensors(fs, v), vcat, setdiff(vs, [src_vertex]));
         incoming_messages
     ]
     seq = contraction_sequence(tensors; alg = "omeinsum", optimizer = GreedyMethod())

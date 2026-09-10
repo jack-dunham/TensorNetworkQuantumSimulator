@@ -94,6 +94,7 @@ function DataGraphs.underlying_graph_type(type::Type{<:NormFactors})
     return underlying_graph_type(fieldtype(type, :state))
 end
 DataGraphs.get_vertex_data(nf::NormFactors, v) = reduce(*, lazy.(norm_factors(nf.state, v)))
+ITensorNetworksNext.factor_tensors(nf::NormFactors, v) = norm_factors(nf.state, v)
 DataGraphs.is_vertex_assigned(nf::NormFactors, v) = has_vertex(graph(nf.state), v)
 DataGraphs.is_edge_assigned(::NormFactors, _edge) = false
 Base.eltype(::Type{<:NormFactors}) = LazyNamedTensor{dimnametype(ITensor), ITensor}
