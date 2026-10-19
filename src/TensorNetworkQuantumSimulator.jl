@@ -26,7 +26,6 @@ include("utils.jl")
 include("kernel_hooks.jl")
 
 include("Apply/apply_gates.jl")
-include("Apply/simple_update.jl")
 include("Apply/full_update.jl")
 include("Apply/gate_definitions.jl")
 include("circuit_import.jl")

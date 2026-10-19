@@ -100,7 +100,7 @@ function graded_state(symmetry)
         append!(layer, ("F_pair", (src(e), dst(e)), 0.29) for e in edges(g))
         append!(layer, ("F_phase", [v], 0.21) for v in vertices(g))
     end
-    ψ, _ = apply_gates(vcat(layer, layer), ψ; apply_kwargs = (; maxdim = 4, cutoff = 1.0e-14))
+    ψ = apply_gates(vcat(layer, layer), ψ; apply_kwargs = (; maxdim = 4, cutoff = 1.0e-14))
     return ψ
 end
 

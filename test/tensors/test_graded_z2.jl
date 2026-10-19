@@ -13,21 +13,20 @@
         end
         circuit = reduce(vcat, [layer for _ in 1:2])
         bp_update_kwargs = (; maxiter = 30, tolerance = 1.0e-12)
-        ψ, errs = apply_gates(
+        ψ = apply_gates(
             circuit, ψ;
             apply_kwargs = (; maxdim = 4, cutoff = 1.0e-14), cache_update_kwargs = bp_update_kwargs
         )
         zs = expect(ψ, [("Z", [v]) for v in vertices(g)]; alg = "bp", cache_update_kwargs = bp_update_kwargs)
         zx = expect(ψ, ("Z", [(2, 2)]); alg = "exact")
-        return ψ, real(sum(zs)), real(zx), sum(errs)
+        return ψ, real(sum(zs)), real(zx)
     end
 
-    ψd, zd, zxd, ed = graded_digest(nothing)
-    ψg, zg, zxg, eg = graded_digest([0 => 1, 1 => 1])
+    ψd, zd, zxd = graded_digest(nothing)
+    ψg, zg, zxg = graded_digest([0 => 1, 1 => 1])
     @test Tensors.isgraded(ψg[(1, 1)])
     @test zd ≈ zg atol = 1e-10
     @test zxd ≈ zxg atol = 1e-10
-    @test ed ≈ eg atol = 1e-12
 
     #Graded fitting needs a generic cold start, but cache construction must be exactly
     #repeatable and must not consume the caller's global RNG stream.
@@ -97,7 +96,7 @@
         logz = -TNQS.freenergy(ψ_bpc)
         rescale!(ψ_bpc)
         for _ in 1:2
-            ψ_bpc, _ = apply_gates(gates, ψ_bpc; apply_kwargs = (; maxdim = 32, cutoff = 1.0e-14))
+            ψ_bpc = apply_gates(gates, ψ_bpc; apply_kwargs = (; maxdim = 32, cutoff = 1.0e-14))
             logz -= TNQS.freenergy(ψ_bpc)
             rescale!(ψ_bpc)
         end
