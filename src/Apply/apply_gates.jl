@@ -54,26 +54,45 @@ gate_operator(gate) = (s = inds(gate; plev = 0); ITensorBase.operator(gate, prim
 function apply_gate_tensors(
         circuit::Vector,
         ψ_bpc::BeliefPropagationCache;
-        apply_kwargs = (;),
         cache_update_kwargs = default_bp_update_kwargs(ψ_bpc),
         update_cache = true,
         verbose = false,
-        consume_inputs = false,
+        kwargs...,
+    )
+    cache_update_kwargs = (; default_bp_update_kwargs(ψ_bpc)..., cache_update_kwargs...)
+    ψ, ms = apply_gates(
+        adapt_gate.(circuit, (ψ_bpc,)), network(ψ_bpc), ψ_bpc.messages;
+        cache_update_kwargs, update_cache, kwargs...
+    )
+    ψ_bpc = BeliefPropagationCache(ITNN.normnetwork(ITensorBase.prime, ψ), ms)
+    return update_cache ? update(ψ_bpc; cache_update_kwargs...) : ψ_bpc
+end
+
+"""
+    apply_gates(circuit::Vector{<:Tensor}, ψ, messages; cache_update_kwargs, apply_kwargs = (;), update_cache = true, consume_inputs = false) -> (ψ, messages)
+
+Apply `circuit` to the network `ψ` with the norm-network `messages`, returning both updated. `ψ` and `messages` may be
+an `ITensorNetworksMPI.DistITensorNetwork` and its `DistMessageCache`, in which case the call is collective.
+"""
+function apply_gates(
+        circuit::Vector{<:Tensor}, ψ, messages;
+        cache_update_kwargs, apply_kwargs = (;), update_cache = true, consume_inputs = false,
     )
     (; maxdim, cutoff, normalize_tensors) = (; maxdim = nothing, cutoff = nothing, normalize_tensors = true, apply_kwargs...)
-    ops = [gate_operator(adapt_gate(g, ψ_bpc)) for g in circuit]
-    (; maxiter, tolerance) = (; default_bp_update_kwargs(ψ_bpc)..., cache_update_kwargs...)
+    ops = gate_operator.(circuit)
+    (; maxiter, tolerance) = cache_update_kwargs
     stopping_criterion = isnothing(tolerance) ? (; maxiter) : (; maxiter, tol = tolerance)
-    environment_alg = update_cache ? (; stopping_criterion, edges = forest_cover_edge_sequence(graph(ψ_bpc))) : nothing
+    environment_alg = update_cache ? (; stopping_criterion) : nothing
     apply_operators = consume_inputs ? ITNN.apply_operators! : ITNN.apply_operators
     ψ, ms = apply_operators(
-        ops, network(ψ_bpc), ψ_bpc.messages;
+        ops, ψ, messages;
         trunc = ITensorBaseBackend._mak_trunc(; maxdim, cutoff), normalize = normalize_tensors, environment_alg
     )
     # New bonds carry names minted by `svd_trunc`; the bra name of each is reset to the prime of its ket name.
-    foreach(e -> ms[e] = ITensorBase.rename(ms[e], (ITensorBase.outputnames(ms[e]) .=> ITensorBase.prime.(ITensorBase.inputnames(ms[e])))...), edges(ms))
-    ψ_bpc = BeliefPropagationCache(ITNN.normnetwork(ITensorBase.prime, ψ), ms)
-    return update_cache ? update(ψ_bpc; cache_update_kwargs...) : ψ_bpc
+    for e in keys(ITNN.MessageCache(ms))
+        ms[e] = ITensorBase.rename(ms[e], (ITensorBase.outputnames(ms[e]) .=> ITensorBase.prime.(ITensorBase.inputnames(ms[e])))...)
+    end
+    return ψ, ms
 end
 
 const apply_circuit = apply_gates
