@@ -16,6 +16,11 @@ function contract(alg::Algorithm"bp", tn::TensorNetwork; cache_update_kwargs = d
     return partitionfunction(update(BeliefPropagationCache(tn, default_messages(tn)); cache_update_kwargs...))
 end
 
+# Boundary MPS on `tn` itself rather than on its norm network, which `BoundaryMPSCache(tn, env_maxdim)` would build.
+function contract(alg::Algorithm"boundarymps", tn::TensorNetwork; cache_update_kwargs = default_cache_update_kwargs(alg, tn), env_maxdim::Integer, cache_kwargs...)
+    return partitionfunction(update(BoundaryMPSCache(tn, default_messages(), env_maxdim; cache_kwargs...); cache_update_kwargs...))
+end
+
 function contract(tn::AbstractTensorNetwork; alg = "exact", kwargs...)
     return contract(Algorithm(alg), tn; kwargs...)
 end

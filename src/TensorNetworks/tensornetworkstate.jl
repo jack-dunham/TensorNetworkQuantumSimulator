@@ -6,11 +6,18 @@ site indices (physical degrees of freedom), as returned by `siteinds`.
 """
 const TensorNetworkState = ITensorNetwork
 
-function norm_factors(tns::TensorNetworkState, verts::Vector; op_strings::Function = v -> "I", joint_op = nothing)
+# A norm network's messages carry the bra copies `prime(l)` of the virtual legs `l` as well, the
+# bra names given by `normnetwork(ITensorBase.prime, ψ)`; `virtualinds` of the norm network has both.
+message_legs(::ITNN.NormNetwork, l) = [collect(l); dag.(prime.(l))]
+message_inds(nn::ITNN.NormNetwork, e) = virtualinds(nn, e)
+
+# `siteinds_f` gives the indices treated as site indices. The loop-correction weights pass those
+# recorded before they relabel a bond to dangle, which `siteinds` would otherwise count.
+function norm_factors(tns::TensorNetworkState, verts::Vector; op_strings::Function = v -> "I", joint_op = nothing, siteinds_f::Function = v -> siteinds(tns, v))
     factors = tensortype(tns)[]
     jverts = joint_op === nothing ? () : last(joint_op)
     for v in verts
-        sinds = siteinds(tns, v)
+        sinds = siteinds_f(v)
         tnv = tns[v]
         tnv_dag = unprime_charge_legs(dag(prime(tnv)), tnv)
         if v ∈ jverts

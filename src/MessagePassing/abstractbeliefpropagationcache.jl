@@ -22,7 +22,7 @@ end
 
 function vertex_scalar(bp_cache::AbstractBeliefPropagationCache, vertex)
     incoming_ms = incoming_messages(bp_cache, vertex)
-    return scalar(contract_optimal([bp_factors(bp_cache, vertex); incoming_ms]))
+    return scalar(contract_optimal([ITNN.factor_tensors(bp_cache.factors, vertex); incoming_ms]))
 end
 
 function edge_scalar(
@@ -31,18 +31,15 @@ function edge_scalar(
     return not_implemented()
 end
 
-network(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 graph(bp_cache::AbstractBeliefPropagationCache) = not_implemented()
 
 #Forward onto the network
 for f in [
-        :(bp_factors),
         :(default_bp_maxiter),
         :(virtualinds),
         :datatype,
         :scalartype,
         :(maxvirtualdim),
-        :(default_message),
         :(siteinds),
     ]
     @eval begin
@@ -92,7 +89,7 @@ end
 
 function message(bp_cache::AbstractBeliefPropagationCache, edge::AbstractEdge; kwargs...)
     ms = messages(bp_cache)
-    return get(() -> default_message(bp_cache, edge; kwargs...), ms, edge)
+    return get(() -> default_message(bp_cache.factors, edge; kwargs...), ms, edge)
 end
 
 function messages(bp_cache::AbstractBeliefPropagationCache, edges::Vector{<:AbstractEdge})
@@ -193,7 +190,7 @@ function updated_message(
     )
     vertex = src(edge)
     incoming_ms = incoming_messages(bp_cache, vertex; ignore_edges = (reverse(edge),))
-    ts = Tensor[incoming_ms; bp_factors(bp_cache, vertex)]
+    ts = Tensor[incoming_ms; ITNN.factor_tensors(bp_cache.factors, vertex)]
     sequence = get!(() -> contraction_sequence(ts; alg = alg.kwargs.sequence_alg), contraction_sequences(bp_cache), vertex => edge)
     m = contract(ts; sequence)
     return alg.kwargs.normalize ? normalize_message(m) : m
