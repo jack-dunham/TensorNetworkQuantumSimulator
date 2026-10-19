@@ -62,10 +62,10 @@
         for x in ((0, 1, 0, 1, 1, 0), (1, 1, 1, 1, 1, 0))
             p_jw = abs2(ψcv[1 + sum(v -> x[v] * 2^(n - v), 1:n)]) / nrmc
             sd = TNQS.siteinds(ψct)
-            tnp = copy(TNQS.tensornetwork(ψct))
+            tnp = copy(ψct)
             for v in vertices(tnp)
                 P = TNQS.adapt_like(tnp[v], TI.projector(ComplexF64, only(sd[v]) => x[v] + 1))
-                TNQS.setindex_preserve!(tnp, tnp[v] * P, v)
+                tnp[v] = tnp[v] * P
             end
             ts = [tnp[v] for v in vertices(tnp)]
             amp = TI.scalar(TI.contract(ts; sequence = TNQS.contraction_sequence(ts; alg = "optimal")))

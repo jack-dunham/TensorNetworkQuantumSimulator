@@ -1,41 +1,10 @@
-
 """
-    TensorNetworkState{V} <: AbstractTensorNetwork{V}
+    TensorNetworkState
 
-A tensor network state defined on a graph with vertices of type `V`. Wraps a `TensorNetwork` together with a dictionary of site indices (physical degrees of freedom) at each vertex.
-
-# Fields
-- `tensornetwork::TensorNetwork{V}`: The underlying tensor network.
-- `siteinds::Dictionary{V, Vector{Index}}`: A dictionary mapping each vertex to its physical (site) indices.
+A tensor network state: an `ITensorNetwork` whose dangling indices at each vertex are its
+site indices (physical degrees of freedom), as returned by `siteinds`.
 """
-struct TensorNetworkState{V, TN <: TensorNetwork{V}, SI <: Dictionary} <: AbstractTensorNetwork{V}
-    tensornetwork::TN
-    siteinds::SI
-end
-
-tensornetwork(tns::TensorNetworkState) = tns.tensornetwork
-siteinds(tns::TensorNetworkState) = tns.siteinds
-graph(tns::TensorNetworkState) = graph(tensornetwork(tns))
-tensors(tns::TensorNetworkState) = tensors(tensornetwork(tns))
-
-Base.copy(tns::TensorNetworkState) = TensorNetworkState(copy(tensornetwork(tns)), copy(siteinds(tns)))
-
-TensorNetworkState(tn::TensorNetwork) = TensorNetworkState(tn, siteinds(tn))
-TensorNetworkState(tensors::Dictionary, g::NamedGraph) = TensorNetworkState(TensorNetwork(tensors, g))
-TensorNetworkState(tensors::Union{Dictionary, Vector}) = TensorNetworkState(TensorNetwork(tensors))
-
-Base.getindex(tns::TensorNetworkState, args...; kwargs...) = getindex(tensornetwork(tns), args...; kwargs...)
-
-siteinds(tns::TensorNetworkState, v) = siteinds(tns)[v]
-
-function Base.setindex!(tns::TensorNetworkState, value, v)
-    setindex!(tensornetwork(tns), value, v)
-    sinds = siteinds(tns)
-    for vn in vcat(neighbors(tns, v), [v])
-        set!(sinds, vn, uniqueinds(tns, vn))
-    end
-    return tns
-end
+const TensorNetworkState = ITensorNetwork
 
 function norm_factors(tns::TensorNetworkState, verts::Vector; op_strings::Function = v -> "I", joint_op = nothing)
     factors = tensortype(tns)[]
@@ -66,9 +35,6 @@ function norm_factors(tns::TensorNetworkState, verts::Vector; op_strings::Functi
 end
 
 norm_factors(tns::TensorNetworkState, v; kwargs...) = norm_factors(tns, [v]; kwargs...)
-bp_factors(tns::TensorNetworkState, v) = norm_factors(tns, v)
-
-message_legs(::TensorNetworkState, l) = [collect(l); dag.(prime.(l))]
 
 """
     random_tensornetworkstate(eltype, g::AbstractGraph, siteinds::Dictionary; bond_dimension::Integer = 1)
@@ -97,7 +63,7 @@ function random_tensornetworkstate(eltype, g::AbstractGraph, siteinds::Dictionar
         set!(tensors, v, random_tensor(eltype, is))
     end
     tensors = Dictionary(vs, narrow_tensors(collect(tensors)))
-    return TensorNetworkState(TensorNetwork(tensors, g), siteinds)
+    return TensorNetworkState(tensors)
 end
 
 """
@@ -159,7 +125,7 @@ function tensornetworkstate(eltype, f::Function, g::AbstractGraph, siteinds::Dic
         tensors[dst(e)] *= onehot(eltype, dag(l[e]) => 1)
     end
     tensors = Dictionary(vs, narrow_tensors(collect(tensors)))
-    return TensorNetworkState(TensorNetwork(tensors, g), siteinds)
+    return TensorNetworkState(tensors)
 end
 
 """

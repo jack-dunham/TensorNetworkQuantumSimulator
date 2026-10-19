@@ -52,7 +52,7 @@
     trt = tc * TI.dag(Cg)
     @test trt ≈ ψg[vg] atol = 1e-13
 
-    sg = only(TNQS.siteinds(TNQS.tensornetwork(ψg))[(1, 1)])
+    sg = only(TNQS.siteinds(ψg)[(1, 1)])
     @test_throws Exception TI.op("X", sg)
     @test_throws Exception TI.state("↓", sg)
     gz = named_grid((3, 3))
@@ -66,10 +66,10 @@
 
     function amp2(ψt, bits)
         sd = TNQS.siteinds(ψt)
-        tnp = copy(TNQS.tensornetwork(ψt))
+        tnp = copy(ψt)
         for v in vertices(tnp)
             P = TNQS.adapt_like(tnp[v], TI.projector(ComplexF64, only(sd[v]) => bits(v)))
-            TNQS.setindex_preserve!(tnp, tnp[v] * P, v)
+            tnp[v] = tnp[v] * P
         end
         ts = [tnp[v] for v in vertices(tnp)]
         amp = TI.scalar(TI.contract(ts; sequence = TNQS.contraction_sequence(ts; alg = "optimal")))

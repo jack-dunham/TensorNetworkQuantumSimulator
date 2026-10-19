@@ -33,7 +33,7 @@ const _default_boundarymps_bp_maxiter = 5
 default_bp_maxiter(bmps_cache::BoundaryMPSCache) =
     is_tree(quotient_graph(supergraph(bmps_cache))) ? 1 : _default_boundarymps_bp_maxiter
 function default_bmps_message_update_alg(tn)
-    if tn isa TensorNetworkState || tn isa BilinearForm || tn isa QuadraticForm
+    if tn isa TensorNetworkState || tn isa BilinearForm || tn isa ITNN.QuadraticFormNetwork
         return "fitting"
     elseif tn isa TensorNetwork
         return "zipup"
@@ -121,7 +121,7 @@ function virtual_index_dimension(
 end
 
 function BoundaryMPSCache(
-        tn::Union{TensorNetworkState, TensorNetwork, BilinearForm, QuadraticForm},
+        tn::Union{TensorNetworkState, TensorNetwork, BilinearForm, ITNN.QuadraticFormNetwork},
         env_maxdim::Integer;
         partition_by = "row",
         gauge_state = false,

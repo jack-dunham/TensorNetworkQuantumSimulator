@@ -533,7 +533,7 @@ function TensorInterface.contract(ts::Vector{<:AbstractTensor}; sequence = nothi
     sequence isa Integer && return ts[sequence]
     # `dest`: a tensor the caller has finished with, offered as storage for the result. Honoured for
     # a two-factor contraction whose result fits it and does not alias either operand (else the
-    # result goes to a pooled buffer and is copied into `dest`); longer trees ignore it.
+    # result goes to a scratch buffer and is copied into `dest`); longer trees ignore it.
     if length(ts) == 2 && dest isa AbstractTensor
         r = _contract_into(ts[1], ts[2], dest)
         r === nothing || return r
@@ -566,7 +566,7 @@ function _view_tensor(storage::StridedArray, is::Vector{<:Index})
 end
 
 # `a * b` written into `dest`'s storage when it fits and aliases neither operand. Otherwise into a
-# pooled buffer, then copied into `dest` (a memcpy, so the caller's storage still ends up holding
+# scratch buffer, then copied into `dest` (a memcpy, so the caller's storage still ends up holding
 # the result). Returns a tensor over `dest`'s storage, or nothing when the types do not allow it.
 function _contract_into(a::AbstractTensor, b::AbstractTensor, dest::AbstractTensor)
     A, B, Dst = _dense_storage(a), _dense_storage(b), _dense_storage(dest)
@@ -577,7 +577,7 @@ function _contract_into(a::AbstractTensor, b::AbstractTensor, dest::AbstractTens
     n = prod(TensorInterface.dim.(out); init = 1)
     n <= length(Dst) || return nothing
     if _aliases(Dst, A) || _aliases(Dst, B)
-        buf = first(fused_buffers(A, T, n))
+        buf = similar(A, T, n)
         tmp = _view_tensor(buf, out)
         LinearAlgebra.mul!(tmp, a, b)
         r = _view_tensor(Dst, out)
@@ -590,7 +590,7 @@ function _contract_into(a::AbstractTensor, b::AbstractTensor, dest::AbstractTens
 end
 
 # Environment chain t · e₁ · e₂ ⋯ (shape-preserving 2-index factors), the result in `dest`'s storage
-# (or fresh when `dest` is nothing). Intermediates ping-pong between one pooled buffer and `dest`'s
+# (or fresh when `dest` is nothing). Intermediates ping-pong between one scratch buffer and `dest`'s
 # storage once `t`'s data is no longer needed, so the chain costs t + one buffer live instead of one
 # fresh tensor per factor.
 function absorb_chain(t::AbstractTensor, envs::Vector, dest)
@@ -603,10 +603,10 @@ function absorb_chain(t::AbstractTensor, envs::Vector, dest)
     n = length(A)
     Dst = dest === nothing ? nothing : _dense_storage(dest)
     (Dst !== nothing && (eltype(Dst) != T || length(Dst) < n)) && (Dst = nothing)
-    buf1, buf2 = fused_buffers(A, T, n)
-    # slots: the pooled buffer, and dest's storage once the input has been read (when dest aliases
+    buf1, buf2 = similar(A, T, n), similar(A, T, n)
+    # slots: a scratch buffer, and dest's storage once the input has been read (when dest aliases
     # t, that is after the first step; otherwise immediately). With no dest, the second slot is the
-    # other pooled buffer and the result is copied out fresh at the end.
+    # other scratch buffer and the result is copied out fresh at the end.
     slots = Dst === nothing ? (buf1, buf2) : (buf1, Dst)
     cur = t
     k = 0
@@ -1334,8 +1334,5 @@ function _hdot(a::AbstractTensor, b::AbstractTensor)
 end
 LinearAlgebra.dot(a::Tensor, b::Tensor) = _hdot(a, b)
 VectorInterface.inner(a::Tensor, b::Tensor) = _hdot(a, b)
-
-const TI = TensorInterface
-include("ITensorBaseKernels.jl")
 
 end

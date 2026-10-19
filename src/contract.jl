@@ -11,6 +11,11 @@ function contract(alg::Union{Algorithm"bp", Algorithm"boundarymps", Algorithm"ct
     return partitionfunction(converged_cache(alg, tn; cache_kwargs..., cache_update_kwargs))
 end
 
+# BP on `tn` itself rather than on its norm network, which `BeliefPropagationCache(tn)` would build.
+function contract(alg::Algorithm"bp", tn::TensorNetwork; cache_update_kwargs = default_cache_update_kwargs(alg, tn))
+    return partitionfunction(update(BeliefPropagationCache(tn, default_messages(tn)); cache_update_kwargs...))
+end
+
 function contract(tn::AbstractTensorNetwork; alg = "exact", kwargs...)
     return contract(Algorithm(alg), tn; kwargs...)
 end
