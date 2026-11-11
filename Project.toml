@@ -42,7 +42,7 @@ rev = "qr-compact-inplace"
 url = "https://github.com/ITensor/ITensorBase.jl.git"
 
 [sources.ITensorNetworksNext]
-rev = "buffered-bp-gate-update"
+rev = "dev"
 url = "https://github.com/jack-dunham/ITensorNetworksNext.jl.git"
 
 [compat]
