@@ -4,7 +4,7 @@
 
 TensorNetworkQuantumSimulator provides two names for tensor networks, `TensorNetworkState` and `TensorNetwork`, both subtypes of `AbstractTensorNetwork`. They share the same graph-based interface but differ in that `TensorNetworkState` carries physical (site) indices — representing a quantum wavefunction ``|\psi\rangle`` — while `TensorNetwork` does not, representing a scalar quantity. See [Graphs](graphs.md) for how to define the underlying graph.
 
-Both names refer to the same type, `ITensorNetworksNext.ITensorNetwork`, so a function cannot tell a single-layer network from a state by its type. Cache constructors given a network alone build its norm network; a single-layer network needs explicit starting messages (see [Caches](caches.md)).
+Both names refer to the same type, `ITensorNetworksNext.ITensorNetwork`, so a function cannot tell a single-layer network from a state by its type. Cache constructors treat a network with site indices as a state and contract its norm network, and contract a network without site indices as it is (see [Caches](caches.md)).
 
 ## TensorNetwork
 

@@ -4,17 +4,7 @@
 
 The central data structures in TensorNetworkQuantumSimulator.jl are the `BeliefPropagationCache`, the `BoundaryMPSCache` and the `CTMRGCache`, all subtypes of `AbstractBeliefPropagationCache`. Each wraps a tensor network together with auxiliary _message_ tensors that encode approximate environment information — the effective contribution of the rest of the network as seen from each bond. Understanding what these caches store, how they are updated, and when to use each is key to getting the most out of the package.
 
-A cache built from a `TensorNetworkState` `ψ` contracts its norm network ``\langle \psi \vert \psi \rangle``. `TensorNetwork` and `TensorNetworkState` are the same type, so a single-layer network `tn` (such as `ising_partitionfunction(g, β)`) passed alone to `BeliefPropagationCache`, `BoundaryMPSCache` or `CTMRGCache` is also given a norm network; to build a cache on `tn` itself, pass its starting messages explicitly:
-
-```julia
-using TensorNetworkQuantumSimulator: default_messages
-
-tn_bpc = BeliefPropagationCache(tn, default_messages(tn))
-tn_bmps = BoundaryMPSCache(tn, default_messages(), 16)
-tn_ctm = CTMRGCache(tn, default_messages(), 16)
-```
-
-`contract(tn; alg = "bp")` (and `"boundarymps"`, `"ctmrg"`) builds its cache this way.
+A cache built from a network with site indices, such as a `TensorNetworkState` `ψ`, contracts its norm network ``\langle \psi \vert \psi \rangle``. A cache built from a network without site indices, such as `ising_partitionfunction(g, β)`, contracts that network itself.
 
 ## Belief Propagation Cache
 

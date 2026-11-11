@@ -15,7 +15,7 @@ const TNQS = TensorNetworkQuantumSimulator
     #BP Cache
     for eltype in [Float32, Float64, ComplexF32, ComplexF64]
         ψ = random_tensornetwork(eltype, g; bond_dimension = 2)
-        ψ_BPC = BeliefPropagationCache(ψ, TNQS.default_messages(ψ))
+        ψ_BPC = BeliefPropagationCache(ψ)
         @test network(ψ_BPC) isa TensorNetwork
         @test ψ_BPC isa BeliefPropagationCache
         @test graph(ψ_BPC) == g
@@ -66,7 +66,7 @@ end
 @testset "Test setting multiple messages" begin
     g = named_path_graph(2)
     tn = random_tensornetwork(Float64, g; bond_dimension = 2)
-    bpc = BeliefPropagationCache(tn, TNQS.default_messages(tn))
+    bpc = BeliefPropagationCache(tn)
     e = first(edges(g))
     directed_edges = [e, reverse(e)]
     new_messages = [2 * message(bpc, edge) for edge in directed_edges]

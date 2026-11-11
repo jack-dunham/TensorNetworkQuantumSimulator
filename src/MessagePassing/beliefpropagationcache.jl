@@ -21,7 +21,11 @@ end
 function BeliefPropagationCache(form::ITNN.AbstractBilinearFormNetwork)
     return BeliefPropagationCache(form, ITNN.message_environment(one, form))
 end
-BeliefPropagationCache(ψ::ITensorNetwork) = BeliefPropagationCache(ITNN.normnetwork(ITensorBase.prime, ψ))
+# A network without site indices is contracted as it is; a state through its norm network.
+function BeliefPropagationCache(ψ::ITensorNetwork)
+    all(isempty, siteinds(ψ)) && return BeliefPropagationCache(ψ, default_messages(ψ))
+    return BeliefPropagationCache(ITNN.normnetwork(ITensorBase.prime, ψ))
+end
 BeliefPropagationCache(blf::BilinearForm) = BeliefPropagationCache(blf, default_messages(blf))
 
 # Starting messages for a network whose factor at each vertex is contracted as plain tensors:

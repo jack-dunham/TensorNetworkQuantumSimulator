@@ -1,6 +1,6 @@
 @eval module $(gensym())
 using TensorNetworkQuantumSimulator
-using TensorNetworkQuantumSimulator: freenergy, default_messages, map_tensors, from_array, array, inds, isgraded, graph
+using TensorNetworkQuantumSimulator: freenergy, map_tensors, from_array, array, inds, isgraded, graph
 using Random
 using Random: Xoshiro
 using LinearAlgebra: Diagonal, I, norm, opnorm, eigvals
@@ -26,14 +26,14 @@ end
     Random.seed!(3)
     tn = positive_network(g)
     Z = contract(tn; alg = "exact")
-    @test freenergy(update(CTMRGCache(tn, default_messages(), 256))) ≈ -log(Z) atol = tol
+    @test freenergy(update(CTMRGCache(tn, 256))) ≈ -log(Z) atol = tol
     @test contract(tn; alg = "ctmrg", env_maxdim = 256) ≈ Z rtol = tol
 end
 
 @testset "CTMRG below lossless χ: the error shrinks with χ" begin
     tn = ising_partitionfunction(named_grid((6, 6)), 0.44)
     lnZ = log(contract(tn; alg = "exact"))
-    errs = [abs(freenergy(update(CTMRGCache(tn, default_messages(), χ))) + lnZ) for χ in (2, 8)]
+    errs = [abs(freenergy(update(CTMRGCache(tn, χ))) + lnZ) for χ in (2, 8)]
     @test errs[2] < errs[1]
     @test errs[2] < 1.0e-6
 end
@@ -41,16 +41,16 @@ end
 @testset "CTMRG at χ = 1 (:eig) is BP: its free energy is the Bethe free energy" begin
     Random.seed!(5)
     tn = positive_network(named_grid((4, 4)))
-    bp = update(BeliefPropagationCache(tn, default_messages(tn)); maxiter = 500, tolerance = 1.0e-15)
-    ct = update(CTMRGCache(tn, default_messages(), 1; projector = :eig); maxiter = 500, tolerance = 1.0e-14)
+    bp = update(BeliefPropagationCache(tn); maxiter = 500, tolerance = 1.0e-15)
+    ct = update(CTMRGCache(tn, 1; projector = :eig); maxiter = 500, tolerance = 1.0e-14)
     @test freenergy(ct) ≈ freenergy(bp) rtol = 1.0e-10
 end
 
 @testset "CTMRG in single precision converges at its default tolerance" begin
     Random.seed!(6)
     tn = positive_network(named_grid((4, 3)); T = Float32)
-    @test_nowarn update(CTMRGCache(tn, default_messages(), 64))
-    @test_nowarn update(CTMRGCache(tn, default_messages(), 64); convergence = :freenergy)
+    @test_nowarn update(CTMRGCache(tn, 64))
+    @test_nowarn update(CTMRGCache(tn, 64); convergence = :freenergy)
 end
 
 @testset "The :eig ring solver: two-sided invariant subspaces, N = $N (dense below 400, Krylov above)" for N in (64, 600)

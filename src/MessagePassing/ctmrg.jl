@@ -11,9 +11,9 @@ environment of a vertex or edge (`incoming_messages`) is its messages together w
 around it. Call `update` on it before computing free energies or expectation values.
 
 # Arguments
-- `network`: A `TensorNetworkState` (its norm network is contracted) or a form, on a planar graph;
-  dense or graded (symmetric or fermionic). A single-layer `TensorNetwork` is passed with explicit
-  starting `messages`, e.g. `CTMRGCache(tn, default_messages(), env_maxdim)`.
+- `network`: A `TensorNetworkState` (its norm network is contracted), a `TensorNetwork` without
+  site indices (contracted as it is) or a form, on a planar graph; dense or graded (symmetric or
+  fermionic).
 - `env_maxdim::Integer`: The bond dimension each cut is truncated to.
 
 # Keyword Arguments
@@ -54,8 +54,10 @@ function Base.copy(cache::CTMRGCache)
     )
 end
 
-CTMRGCache(ψ::ITensorNetwork, env_maxdim::Integer; kwargs...) =
-    CTMRGCache(ITNN.normnetwork(ITensorBase.prime, ψ), default_messages(), env_maxdim; kwargs...)
+function CTMRGCache(ψ::ITensorNetwork, env_maxdim::Integer; kwargs...)
+    factors = all(isempty, siteinds(ψ)) ? ψ : ITNN.normnetwork(ITensorBase.prime, ψ)
+    return CTMRGCache(factors, default_messages(), env_maxdim; kwargs...)
+end
 CTMRGCache(form::Union{ITNN.NormNetwork, BilinearForm, ITNN.QuadraticFormNetwork}, env_maxdim::Integer; kwargs...) =
     CTMRGCache(form, default_messages(), env_maxdim; kwargs...)
 

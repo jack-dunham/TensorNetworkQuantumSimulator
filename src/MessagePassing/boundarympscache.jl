@@ -119,9 +119,9 @@ function virtual_index_dimension(
     return Int(min(legs_dim(es[(i + 1):end]), legs_dim(es[1:(j - 1)]), Float64(env_maxdim(bmps_cache))))
 end
 
-# A state is wrapped in its norm network; a single-layer network is passed with explicit
-# `messages`, e.g. `BoundaryMPSCache(tn, default_messages(), env_maxdim)`.
+# A network without site indices is contracted as it is; a state through its norm network.
 function BoundaryMPSCache(ψ::ITensorNetwork, env_maxdim::Integer; gauge_state = false, kwargs...)
+    all(isempty, siteinds(ψ)) && return BoundaryMPSCache(ψ, default_messages(), env_maxdim; kwargs...)
     gauge_state && (ψ = gauge_and_scale(ψ))
     return BoundaryMPSCache(ITNN.normnetwork(ITensorBase.prime, ψ), default_messages(), env_maxdim; kwargs...)
 end
