@@ -6,6 +6,10 @@ end
 ITNN.ketnetwork(blf::BilinearForm) = blf.ket
 ITNN.branetwork(blf::BilinearForm) = blf.bra
 ITNN.factor_tensors(blf::BilinearForm, v) = [blf.ket[v], blf.bra[v]]
+# The bra is stored already conjugated, so no operand is flagged for conjugation.
+function ITNN.message_contraction_tensors(blf::BilinearForm, messages, v)
+    return [blf.ket[v]; messages...; blf.bra[v]], falses(length(messages) + 2)
+end
 
 Base.copy(blf::BilinearForm) = typeof(blf)(copy(blf.ket), copy(blf.bra))
 
