@@ -2,7 +2,9 @@
 
 ![Tensor network types](tensor_network_types.svg)
 
-TensorNetworkQuantumSimulator provides two core types, `TensorNetworkState` and `TensorNetwork`, both subtypes of `AbstractTensorNetwork`. They share the same graph-based interface but differ in that `TensorNetworkState` carries physical (site) indices — representing a quantum wavefunction ``|\psi\rangle`` — while `TensorNetwork` does not, representing a scalar quantity. See [Graphs](graphs.md) for how to define the underlying graph.
+TensorNetworkQuantumSimulator provides two names for tensor networks, `TensorNetworkState` and `TensorNetwork`, both subtypes of `AbstractTensorNetwork`. They share the same graph-based interface but differ in that `TensorNetworkState` carries physical (site) indices — representing a quantum wavefunction ``|\psi\rangle`` — while `TensorNetwork` does not, representing a scalar quantity. See [Graphs](graphs.md) for how to define the underlying graph.
+
+Both names refer to the same type, `ITensorNetworksNext.ITensorNetwork`, so a function cannot tell a single-layer network from a state by its type. Cache constructors given a network alone build its norm network; a single-layer network needs explicit starting messages (see [Caches](caches.md)).
 
 ## TensorNetwork
 
@@ -46,7 +48,7 @@ Z_tn = ising_partitionfunction(g, β; Js)
 
 ## TensorNetworkState
 
-A `TensorNetworkState` extends `TensorNetwork` by additionally storing **site indices** — a vector of them per vertex — that represent the physical (local) degrees of freedom. This is the type we expect users to use most often, as it represents a quantum state ``|\psi\rangle`` on a lattice. The typical use case is one site index per vertex, but there is full flexibility here.
+A `TensorNetworkState` is a tensor network whose tensors additionally carry **site indices** — a vector of them per vertex — that represent the physical (local) degrees of freedom. This is the type we expect users to use most often, as it represents a quantum state ``|\psi\rangle`` on a lattice. The typical use case is one site index per vertex, but there is full flexibility here.
 
 ### Product States
 
