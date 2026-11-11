@@ -2,6 +2,7 @@ using Random: Xoshiro
 
 """
     CTMRGCache(network, env_maxdim::Integer; positions, projector = :svd)
+    CTMRGCache(tn::TensorNetwork, messages, env_maxdim::Integer; positions, projector = :svd)
 
 Corner transfer matrix (CTMRG) environments for a tensor network on any planar graph. Every directed
 edge carries a message, as in belief propagation, and every inner face a ring of corners, each the
@@ -10,8 +11,9 @@ environment of a vertex or edge (`incoming_messages`) is its messages together w
 around it. Call `update` on it before computing free energies or expectation values.
 
 # Arguments
-- `network`: A `TensorNetwork`, a `TensorNetworkState` (its norm network) or a form, on a planar graph;
-  dense or graded (symmetric or fermionic).
+- `network`: A `TensorNetworkState` (its norm network is contracted) or a form, on a planar graph;
+  dense or graded (symmetric or fermionic). A single-layer `TensorNetwork` is passed with explicit
+  starting `messages`, e.g. `CTMRGCache(tn, default_messages(), env_maxdim)`.
 - `env_maxdim::Integer`: The bond dimension each cut is truncated to.
 
 # Keyword Arguments
@@ -26,8 +28,8 @@ around it. Call `update` on it before computing free energies or expectation val
 # Returns
 - A `CTMRGCache`, whose update rules are fixed and certified exact at lossless `env_maxdim` (see `ctmrg_rules`).
 """
-struct CTMRGCache{V, N} <: AbstractBeliefPropagationCache{V}
-    network::N
+struct CTMRGCache{V, F} <: AbstractBeliefPropagationCache{V}
+    factors::F
     embedding::PlanarEmbedding{V}
     rules::CTMRGRules{V}
     env_maxdim::Int
@@ -40,40 +42,45 @@ struct CTMRGCache{V, N} <: AbstractBeliefPropagationCache{V}
     sequences::Dict{Any, Any}                  # contraction orders, by the structure of the tensor list
 end
 
-network(cache::CTMRGCache) = cache.network
 graph(cache::CTMRGCache) = graph(network(cache))
 messages(cache::CTMRGCache) = cache.messages
 contraction_sequences(cache::CTMRGCache) = nothing
 
 function Base.copy(cache::CTMRGCache)
     return CTMRGCache(
-        copy(cache.network), cache.embedding, cache.rules, cache.env_maxdim, cache.projector,
+        copy_factors(cache.factors), cache.embedding, cache.rules, cache.env_maxdim, cache.projector,
         copy(cache.bonds), copy(cache.sides), copy(cache.messages), copy(cache.corners), copy(cache.projectors),
         cache.sequences
     )
 end
 
+CTMRGCache(ψ::ITensorNetwork, env_maxdim::Integer; kwargs...) =
+    CTMRGCache(ITNN.normnetwork(ITensorBase.prime, ψ), default_messages(), env_maxdim; kwargs...)
+CTMRGCache(form::Union{ITNN.NormNetwork, BilinearForm, ITNN.QuadraticFormNetwork}, env_maxdim::Integer; kwargs...) =
+    CTMRGCache(form, default_messages(), env_maxdim; kwargs...)
+
+# Edges without a message in `messages` start from a tensor of ones (see `initialize_blocks!`).
 function CTMRGCache(
-        network, env_maxdim::Integer;
-        positions = default_positions(graph(network)),
+        factors, messages::Dictionary, env_maxdim::Integer;
+        positions = default_positions(graph(factors)),
         projector::Symbol = :svd,
     )
     projector in (:svd, :eig) || throw(ArgumentError("projector must be :svd or :eig, got $(repr(projector))"))
-    g = graph(network)
+    g = graph(factors)
     V = vertextype(g)
     emb = planar_embedding(g; positions)
     rules = ctmrg_rules(emb; jacobi = projector === :eig)
     bonds = Dict{Tuple{V, V}, Vector{Index}}()
     for e in edges(g)
         u, v = src(e), dst(e)
-        bonds[(u, v)], bonds[(v, u)] = shared_legs(network, u, v), shared_legs(network, v, u)
+        bonds[(u, v)], bonds[(v, u)] = shared_legs(factors, u, v), shared_legs(factors, v, u)
     end
     # graded like the network's legs: one trivial sector
     ref = first(bonds[first(rules.interfaces)])
     sides = Dict{Tuple{V, V}, Index}(I => new_index(ref, 1; tags = "Link,ctm") for I in rules.interfaces)
     cache = CTMRGCache(
-        network, emb, rules, Int(env_maxdim), projector,
-        bonds, sides, Dictionary{NamedEdge, Tensor}(), Dict{Tuple{V, Int}, Tensor}(),
+        factors, emb, rules, Int(env_maxdim), projector,
+        bonds, sides, Dictionary{NamedEdge, Tensor}(messages), Dict{Tuple{V, Int}, Tensor}(),
         Dict{Tuple{V, V}, Tuple{Tensor, Tensor, Index}}(), Dict{Any, Any}()
     )
     initialize_blocks!(cache)
@@ -89,8 +96,8 @@ end
 
 # The legs u shares with v, as u's tensors carry them (graded legs have an orientation, which
 # index equality ignores).
-function shared_legs(network, u, v)
-    legs(x) = unique(Iterators.flatten(inds(t) for t in bp_factors(network, x)))
+function shared_legs(factors, u, v)
+    legs(x) = unique(Iterators.flatten(inds(t) for t in ITNN.factor_tensors(factors, x)))
     lv = legs(v)
     return Index[i for i in legs(u) if i in lv]
 end
@@ -103,7 +110,7 @@ side_leg(cache::CTMRGCache, I, x) = x == first(I) ? cache.sides[I] : dag(cache.s
 # legs, where ones are not symmetric, as a random symmetric tensor (seeded, so every run is the same).
 function initialize_blocks!(cache::CTMRGCache)
     emb = cache.embedding
-    ref = first(bp_factors(network(cache), first(vertices(graph(cache)))))
+    ref = first(ITNN.factor_tensors(cache.factors, first(vertices(graph(cache)))))
     rng = Xoshiro(2)
     function ones_on(legs)
         any(isgraded, legs) && return adapt_like(ref, random_tensor(rng, scalartype(ref), legs))
@@ -114,7 +121,7 @@ function initialize_blocks!(cache::CTMRGCache)
         for h in (face_of_dart(emb, u, v), face_of_dart(emb, v, u))
             isinner(h) && push!(legs, side_leg(cache, interface_dart(emb, h, u, other_neighbor(emb, h, u, v)), u))
         end
-        set!(cache.messages, NamedEdge(u => v), ones_on(legs))
+        haskey(cache.messages, NamedEdge(u => v)) || set!(cache.messages, NamedEdge(u => v), ones_on(legs))
     end
     for (p, f) in corner_keys(emb)
         w = face_walk(emb, f, p)
@@ -128,7 +135,7 @@ end
 function recipe_tensors(
         cache::CTMRGCache, parts;
         projectors = cache.projectors,
-        site = v -> bp_factors(network(cache), v),
+        site = v -> ITNN.factor_tensors(cache.factors, v),
         memo = nothing,
     )
     ts = Tensor[]
